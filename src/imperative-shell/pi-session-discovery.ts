@@ -26,5 +26,6 @@ function getPiAgentHome(): string {
 }
 
 function encodeWorkspacePath(workspacePath: string): string {
-  return `--${workspacePath.replaceAll("/", "-")}--`;
+  const normalized = workspacePath.replace(/^\/+/, "").replaceAll("/", "-");
+  return `--${normalized}--`;
 }

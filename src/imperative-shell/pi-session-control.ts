@@ -336,7 +336,8 @@ function formatSessionMessage(message: Record<string, unknown>): string | null {
 }
 
 function encodeWorkspacePath(workspacePath: string): string {
-  return `--${workspacePath.replaceAll("/", "-")}--`;
+  const normalized = workspacePath.replace(/^\/+/, "").replaceAll("/", "-");
+  return `--${normalized}--`;
 }
 
 async function safeReadDir(directory: string): Promise<ReadonlyArray<Dirent>> {
