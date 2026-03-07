@@ -15,7 +15,7 @@ A lane is the unit of work. The lane's metadata, TODOs, and runtime state are th
 - what port and workspace it uses
 - what TODOs exist
 - what the dashboard sees
-- what the current TODO and pending question are
+- what the current TODO and needs-input prompt are
 
 ## Required reads
 

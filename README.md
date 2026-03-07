@@ -64,7 +64,7 @@ Implemented now:
 - `pi-lane todo reject <lane-id> <todo-id> [--json]`
 - `pi-lane runtime show <lane-id> [--json]`
 - `pi-lane runtime set-summary <lane-id> --text ... [--json]`
-- `pi-lane runtime set-question <lane-id> --text ... [--json]`
+- `pi-lane runtime set-needs-input <lane-id> --text ... [--json]`
 - `pi-lane runtime set-current-todo <lane-id> <todo-id> [--json]`
 - `pi-lane runtime clear-current-todo <lane-id> [--json]`
 - `pi-lane runtime set-mode <lane-id> <mode> [--json]`

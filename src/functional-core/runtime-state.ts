@@ -23,7 +23,7 @@ export function createStartedRuntimeState(options: {
     mode: "interactive",
     currentTodoId: existingRuntimeState?.currentTodoId ?? null,
     currentSummary: existingRuntimeState?.currentSummary ?? null,
-    pendingQuestion: existingRuntimeState?.pendingQuestion ?? null,
+    needsInput: existingRuntimeState?.needsInput ?? null,
     lastHumanInstruction: existingRuntimeState?.lastHumanInstruction ?? null,
   };
 }
@@ -45,11 +45,11 @@ export function setRuntimeSummary(runtimeState: LaneRuntimeState, summary: strin
   };
 }
 
-export function setRuntimePendingQuestion(runtimeState: LaneRuntimeState, question: string | null, now: string): LaneRuntimeState {
+export function setRuntimeNeedsInput(runtimeState: LaneRuntimeState, needsInput: string | null, now: string): LaneRuntimeState {
   return {
     ...runtimeState,
     updatedAt: now,
-    pendingQuestion: normalizeNullableText(question),
+    needsInput: normalizeNullableText(needsInput),
   };
 }
 

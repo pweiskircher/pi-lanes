@@ -5,7 +5,7 @@ import {
   setRuntimeCurrentTodo,
   setRuntimeLastHumanInstruction,
   setRuntimeMode,
-  setRuntimePendingQuestion,
+  setRuntimeNeedsInput,
   setRuntimeSummary,
 } from "../src/functional-core/runtime-state.js";
 import type {Lane, LaneRuntimeState, LaneTodoFile} from "../src/types.js";
@@ -18,11 +18,11 @@ test("setRuntimeSummary updates the summary and timestamp", () => {
   assert.equal(result.updatedAt, "2026-03-07T14:10:00Z");
 });
 
-test("setRuntimePendingQuestion trims empty text to null", () => {
+test("setRuntimeNeedsInput trims empty text to null", () => {
   const state = createRuntimeState();
-  const result = setRuntimePendingQuestion(state, "   ", "2026-03-07T14:10:00Z");
+  const result = setRuntimeNeedsInput(state, "   ", "2026-03-07T14:10:00Z");
 
-  assert.equal(result.pendingQuestion, null);
+  assert.equal(result.needsInput, null);
 });
 
 test("setRuntimeCurrentTodo accepts a reviewed todo", () => {

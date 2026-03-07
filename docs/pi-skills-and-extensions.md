@@ -68,7 +68,7 @@ Likely commands:
 
 Purpose:
 - write current lane runtime state in a structured format
-- update `currentSummary`, `currentTodoId`, and `pendingQuestion`
+- update `currentSummary`, `currentTodoId`, and `needsInput`
 
 ### lane dashboard bridge extension
 
@@ -90,7 +90,7 @@ The extension is still intentionally small, but it now provides:
 - `/lane-status`
 - `/lane-todos`
 - `/lane-set-summary`
-- `/lane-set-question`
+- `/lane-set-needs-input`
 - `/lane-set-current-todo`
 - `lane_propose_todo` for LLM-proposed TODO capture
 

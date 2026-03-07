@@ -111,7 +111,7 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
   const mode = readEnum(objectValue.mode, "$.mode", runtimeModes, issues);
   const currentTodoId = readOptionalTodoId(objectValue.currentTodoId, "$.currentTodoId", issues);
   const currentSummary = readOptionalString(objectValue.currentSummary, "$.currentSummary", issues);
-  const pendingQuestion = readOptionalString(objectValue.pendingQuestion, "$.pendingQuestion", issues);
+  const needsInput = readOptionalString(objectValue.needsInput, "$.needsInput", issues);
   const lastHumanInstruction = readOptionalString(objectValue.lastHumanInstruction, "$.lastHumanInstruction", issues);
 
   if (issues.length > 0 || laneId === null || isActive === null || updatedAt === null || sessionName === null || workspacePath === null || port === null || mode === null) {
@@ -132,7 +132,7 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
       mode,
       currentTodoId,
       currentSummary,
-      pendingQuestion,
+      needsInput,
       lastHumanInstruction,
     },
   };

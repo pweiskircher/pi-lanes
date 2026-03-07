@@ -216,7 +216,7 @@ Suggested fields:
 - `mode`
 - `currentTodoId`
 - `currentSummary`
-- `pendingQuestion`
+- `needsInput`
 - `lastHumanInstruction`
 
 ### Runtime modes
@@ -289,7 +289,7 @@ Show:
 - runtime state
 - full TODO list grouped by status
 - pending review TODOs
-- recent summary and pending question
+- recent summary and needs-input text
 
 ### TODO actions
 
@@ -354,7 +354,7 @@ Purpose:
 
 Purpose:
 - help a future manager compare multiple lanes
-- surface blockers, pending questions, and stale TODO queues
+- surface blockers, needs-input prompts, and stale TODO queues
 
 ### Extensions
 
@@ -371,7 +371,7 @@ Likely commands:
 
 Purpose:
 - update runtime state from inside pi
-- expose current summary, pending question, and current TODO
+- expose current summary, needs-input text, and current TODO
 - keep dashboard-visible state in sync
 
 #### 3. lane dashboard bridge extension

@@ -57,7 +57,7 @@
     "currentSummary": {
       "type": "string"
     },
-    "pendingQuestion": {
+    "needsInput": {
       "type": "string"
     },
     "lastHumanInstruction": {

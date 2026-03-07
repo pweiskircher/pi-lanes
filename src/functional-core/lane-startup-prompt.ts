@@ -27,8 +27,8 @@ export function formatLaneStartupPrompt(options: {
   if (runtimeState.currentSummary) {
     lines.push(`Latest summary: ${runtimeState.currentSummary}`);
   }
-  if (runtimeState.pendingQuestion) {
-    lines.push(`Pending question: ${runtimeState.pendingQuestion}`);
+  if (runtimeState.needsInput) {
+    lines.push(`Needs input: ${runtimeState.needsInput}`);
   }
   if (runtimeState.currentTodoId) {
     lines.push(`Current TODO: ${runtimeState.currentTodoId}`);

@@ -31,8 +31,8 @@ export function formatLaneBriefing(options: {
     lines.push(`Latest summary: ${runtimeState.currentSummary}`);
   }
 
-  if (runtimeState?.pendingQuestion) {
-    lines.push(`Needs input: ${runtimeState.pendingQuestion}`);
+  if (runtimeState?.needsInput) {
+    lines.push(`Needs input: ${runtimeState.needsInput}`);
   }
 
   return lines.join("\n");

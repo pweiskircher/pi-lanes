@@ -5,7 +5,7 @@ import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
   setRuntimeCurrentTodo,
-  setRuntimePendingQuestion,
+  setRuntimeNeedsInput,
   setRuntimeSummary,
 } from "../src/functional-core/runtime-state.js";
 import {
@@ -53,7 +53,7 @@ export default function (pi: ExtensionAPI) {
         `Open TODOs: ${openCount}`,
         `Proposed TODOs: ${proposedCount}`,
         runtimeState.currentSummary ? `Summary: ${runtimeState.currentSummary}` : null,
-        runtimeState.pendingQuestion ? `Needs input: ${runtimeState.pendingQuestion}` : null,
+        runtimeState.needsInput ? `Needs input: ${runtimeState.needsInput}` : null,
       ]
         .filter(Boolean)
         .join("\n");
@@ -103,8 +103,8 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("lane-set-question", {
-    description: "Set the current lane pending question",
+  pi.registerCommand("lane-set-needs-input", {
+    description: "Set the current lane needs-input text",
     handler: async (args, ctx) => {
       const lane = await findCurrentLane();
       if (!lane) {
@@ -113,9 +113,9 @@ export default function (pi: ExtensionAPI) {
       }
 
       const runtimeState = await loadOrCreateRuntimeState(lane);
-      const updated = setRuntimePendingQuestion(runtimeState, args.trim(), new Date().toISOString());
+      const updated = setRuntimeNeedsInput(runtimeState, args.trim(), new Date().toISOString());
       await saveLaneRuntimeState(getLanePaths(), updated);
-      ctx.ui.notify(`Updated pending question for ${lane.id}`, "success");
+      ctx.ui.notify(`Updated needs-input text for ${lane.id}`, "success");
     },
   });
 

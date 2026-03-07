@@ -10,6 +10,6 @@
   "mode": "working",
   "currentTodoId": "todo-001",
   "currentSummary": "Compared 2 tagged samples. Hybrid heuristic looks better on one malformed document.",
-  "pendingQuestion": "Prefer visual consistency over strict tag fidelity when producers disagree?",
+  "needsInput": "Prefer visual consistency over strict tag fidelity when producers disagree?",
   "lastHumanInstruction": "Start TODO todo-001 and stop if you need a design decision."
 }

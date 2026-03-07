@@ -21,7 +21,7 @@ import {
   setRuntimeCurrentTodo,
   setRuntimeLastHumanInstruction,
   setRuntimeMode,
-  setRuntimePendingQuestion,
+  setRuntimeNeedsInput,
   setRuntimeSummary,
 } from "./functional-core/runtime-state.js";
 import {
@@ -245,11 +245,11 @@ export async function main(argv: ReadonlyArray<string>): Promise<number> {
     });
 
   cli
-    .command("runtime set-question <laneId>", "Set pending question")
-    .option("--text <text>", "Question text")
+    .command("runtime set-needs-input <laneId>", "Set needs-input text")
+    .option("--text <text>", "Needs-input text")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: RuntimeTextOptions) => {
-      await runWithHandling(() => runRuntimeSetQuestionCommand(laneId, createCommandContext(options), options));
+      await runWithHandling(() => runRuntimeSetNeedsInputCommand(laneId, createCommandContext(options), options));
     });
 
   cli
@@ -740,14 +740,14 @@ async function runRuntimeSetSummaryCommand(laneId: string, context: CommandConte
   return printRuntimeMutationResult(context, "runtime.set-summary", laneId, updated, `Updated summary for ${laneId}`);
 }
 
-async function runRuntimeSetQuestionCommand(laneId: string, context: CommandContext, options: RuntimeTextOptions): Promise<number> {
+async function runRuntimeSetNeedsInputCommand(laneId: string, context: CommandContext, options: RuntimeTextOptions): Promise<number> {
   if (options.text === undefined) {
     throw new Error("missing required flag: --text");
   }
   const {paths, runtimeState} = await loadRuntimeCommandState(laneId);
-  const updated = setRuntimePendingQuestion(runtimeState, options.text, toIsoNow());
+  const updated = setRuntimeNeedsInput(runtimeState, options.text, toIsoNow());
   await saveLaneRuntimeState(paths, updated);
-  return printRuntimeMutationResult(context, "runtime.set-question", laneId, updated, `Updated pending question for ${laneId}`);
+  return printRuntimeMutationResult(context, "runtime.set-needs-input", laneId, updated, `Updated needs-input text for ${laneId}`);
 }
 
 async function runRuntimeSetCurrentTodoCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
@@ -832,7 +832,7 @@ function buildLaneSummary(lane: Lane, runtimeState: LaneRuntimeState | null, tod
     stateLabel: runtimeState?.isActive ? runtimeState.mode : "cold",
     currentTodoId: runtimeState?.currentTodoId ?? null,
     currentSummary: runtimeState?.currentSummary ?? null,
-    pendingQuestion: runtimeState?.pendingQuestion ?? null,
+    needsInput: runtimeState?.needsInput ?? null,
     todoCounts: countTodos(todoFile),
   };
 }

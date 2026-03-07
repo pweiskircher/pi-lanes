@@ -57,7 +57,7 @@ export type LaneRuntimeState = {
   readonly mode: LaneRuntimeMode;
   readonly currentTodoId: string | null;
   readonly currentSummary: string | null;
-  readonly pendingQuestion: string | null;
+  readonly needsInput: string | null;
   readonly lastHumanInstruction: string | null;
 };
 
