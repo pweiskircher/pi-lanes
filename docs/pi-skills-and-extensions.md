@@ -93,13 +93,16 @@ The extension is still intentionally small, but it now provides:
 - `/lane-set-needs-input`
 - `/lane-set-current-todo`
 - `lane_propose_todo` for LLM-proposed TODO capture
+- a localhost-only live-message bridge for active lane sessions
 
 The dashboard now complements those commands with HTTP-based editing for:
+- lane context
 - runtime summary
 - needs-input state
 - current TODO
 - runtime mode
 - lane TODO CRUD and review actions
+- live message delivery into active lane sessions
 
 ## Suggested priority
 

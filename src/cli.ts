@@ -1,6 +1,7 @@
 // pattern: Imperative Shell
 
 import {existsSync} from "node:fs";
+import {spawnSync} from "node:child_process";
 import {resolve, dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Command} from "commander";
@@ -104,6 +105,11 @@ type TodoEditOptions = JsonOption & {
 
 type RuntimeTextOptions = JsonOption & {
   readonly text?: string;
+};
+
+type ContextEditOptions = JsonOption & {
+  readonly text?: string;
+  readonly editor?: string;
 };
 
 type DashboardServeOptions = {
@@ -314,6 +320,26 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: RuntimeTextOptions) => {
       await runWithHandling(() => runRuntimeSetLastHumanInstructionCommand(laneId, createCommandContext(options), options));
+    });
+
+  const contextCommand = program.command("context").description("Lane context commands");
+  contextCommand
+    .command("show")
+    .argument("<laneId>")
+    .description("Show the lane context file")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: JsonOption) => {
+      await runWithHandling(() => runContextShowCommand(laneId, createCommandContext(options)));
+    });
+  contextCommand
+    .command("edit")
+    .argument("<laneId>")
+    .description("Edit the lane context file")
+    .option("--text <text>", "Replace the context text directly instead of opening an editor")
+    .option("--editor <editor>", "Editor command to use when opening interactively")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: ContextEditOptions) => {
+      await runWithHandling(() => runContextEditCommand(laneId, createCommandContext(options), options));
     });
 
   if (argv.length <= 2) {
@@ -813,6 +839,56 @@ async function runRuntimeSetLastHumanInstructionCommand(laneId: string, context:
   const updated = setRuntimeLastHumanInstruction(runtimeState, options.text, toIsoNow());
   await saveLaneRuntimeState(paths, updated);
   return printRuntimeMutationResult(context, "runtime.set-last-human-instruction", laneId, updated, `Updated last human instruction for ${laneId}`);
+}
+
+async function runContextShowCommand(laneId: string, context: CommandContext): Promise<number> {
+  const paths = getDefaultLanePaths();
+  const lane = getLaneById(await loadLaneRegistry(paths), laneId);
+  await ensureLaneContextExists(paths, lane);
+  const text = (await readLaneContext(paths, laneId)) ?? "";
+  const contextPath = getLaneContextPath(paths, laneId);
+
+  if (context.outputMode === "json") {
+    printJson({ok: true, laneId, contextPath, text});
+  } else {
+    process.stdout.write(text.length > 0 ? text : `${contextPath}\n`);
+  }
+  return 0;
+}
+
+async function runContextEditCommand(laneId: string, context: CommandContext, options: ContextEditOptions): Promise<number> {
+  const paths = getDefaultLanePaths();
+  const lane = getLaneById(await loadLaneRegistry(paths), laneId);
+  await ensureLaneContextExists(paths, lane);
+  const contextPath = getLaneContextPath(paths, laneId);
+
+  if (options.text !== undefined) {
+    await writeTextFile(contextPath, options.text.endsWith("\n") ? options.text : `${options.text}\n`);
+    if (context.outputMode === "json") {
+      printJson({ok: true, action: "context.edit", laneId, contextPath, mode: "write"});
+    } else {
+      console.log(`Updated context for ${laneId}`);
+    }
+    return 0;
+  }
+
+  const editorCommand = options.editor ?? process.env.VISUAL ?? process.env.EDITOR;
+  if (!editorCommand) {
+    throw new Error("no editor configured; set VISUAL or EDITOR, or pass --editor or --text");
+  }
+
+  const result = spawnSync(editorCommand, [contextPath], {stdio: "inherit", shell: true});
+  if (result.error) {
+    throw result.error;
+  }
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(`editor exited with status ${String(result.status ?? 1)}`);
+  }
+
+  if (context.outputMode === "json") {
+    printJson({ok: true, action: "context.edit", laneId, contextPath, mode: "editor", editor: editorCommand});
+  }
+  return 0;
 }
 
 async function loadRuntimeCommandState(laneId: string): Promise<{

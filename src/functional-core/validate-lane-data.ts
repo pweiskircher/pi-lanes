@@ -104,6 +104,7 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
   const currentSummary = readOptionalString(objectValue.currentSummary, "$.currentSummary", issues);
   const needsInput = readOptionalString(objectValue.needsInput, "$.needsInput", issues);
   const lastHumanInstruction = readOptionalString(objectValue.lastHumanInstruction, "$.lastHumanInstruction", issues);
+  const messageBridge = readOptionalMessageBridge(objectValue.messageBridge, "$.messageBridge", issues);
 
   if (issues.length > 0 || laneId === null || isActive === null || updatedAt === null || sessionName === null || repoPath === null || mode === null) {
     return failure(issues);
@@ -124,6 +125,7 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
       currentSummary,
       needsInput,
       lastHumanInstruction,
+      messageBridge,
     },
   };
 }
@@ -247,6 +249,22 @@ function readOptionalString(input: unknown, path: string, issues: Array<Validati
   return input;
 }
 
+function readOptionalMessageBridge(
+  input: unknown,
+  path: string,
+  issues: Array<ValidationIssue>,
+): {readonly port: number; readonly authToken: string} | null {
+  if (input === undefined || input === null) return null;
+  const objectValue = readObject(input, path, issues);
+  if (!objectValue) return null;
+  const port = readInteger(objectValue.port, `${path}.port`, issues);
+  const authToken = readNonEmptyString(objectValue.authToken, `${path}.authToken`, issues);
+  if (port === null || authToken === null) {
+    return null;
+  }
+  return {port, authToken};
+}
+
 function readOptionalStringArray(input: unknown, path: string, issues: Array<ValidationIssue>): ReadonlyArray<string> | null {
   if (input === undefined || input === null) return [];
   if (!Array.isArray(input)) {
@@ -283,6 +301,14 @@ function readRequiredIsoDate(input: unknown, path: string, issues: Array<Validat
 function readOptionalIsoDate(input: unknown, path: string, issues: Array<ValidationIssue>): string | null {
   if (input === undefined || input === null) return null;
   return readRequiredIsoDate(input, path, issues);
+}
+
+function readInteger(input: unknown, path: string, issues: Array<ValidationIssue>): number | null {
+  if (typeof input !== "number" || !Number.isInteger(input) || input < 1 || input > 65535) {
+    issues.push({path, message: "expected an integer between 1 and 65535"});
+    return null;
+  }
+  return input;
 }
 
 function readEnum<T extends string>(input: unknown, path: string, allowedValues: ReadonlySet<T>, issues: Array<ValidationIssue>): T | null {

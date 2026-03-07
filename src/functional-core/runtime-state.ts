@@ -1,6 +1,6 @@
 // pattern: Functional Core
 
-import type {Lane, LaneRuntimeMode, LaneRuntimeState, LaneTodoFile, ValidationResult} from "../types.js";
+import type {Lane, LaneRuntimeMessageBridge, LaneRuntimeMode, LaneRuntimeState, LaneTodoFile, ValidationResult} from "../types.js";
 
 const runtimeModes = new Set<LaneRuntimeMode>(["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]);
 
@@ -24,6 +24,7 @@ export function createStartedRuntimeState(options: {
     currentSummary: existingRuntimeState?.currentSummary ?? null,
     needsInput: existingRuntimeState?.needsInput ?? null,
     lastHumanInstruction: existingRuntimeState?.lastHumanInstruction ?? null,
+    messageBridge: existingRuntimeState?.messageBridge ?? null,
   };
 }
 
@@ -33,6 +34,7 @@ export function createStoppedRuntimeState(runtimeState: LaneRuntimeState, now: s
     isActive: false,
     updatedAt: now,
     mode: "stopped",
+    messageBridge: null,
   };
 }
 
@@ -125,6 +127,18 @@ export function setRuntimeLastHumanInstruction(
     ...runtimeState,
     updatedAt: now,
     lastHumanInstruction: normalizeNullableText(instruction),
+  };
+}
+
+export function setRuntimeMessageBridge(
+  runtimeState: LaneRuntimeState,
+  messageBridge: LaneRuntimeMessageBridge | null,
+  now: string,
+): LaneRuntimeState {
+  return {
+    ...runtimeState,
+    updatedAt: now,
+    messageBridge,
   };
 }
 

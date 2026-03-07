@@ -43,6 +43,11 @@ export type LaneTodoFile = {
 
 export type LaneRuntimeMode = "idle" | "interactive" | "working" | "waiting_for_input" | "blocked" | "stopped";
 
+export type LaneRuntimeMessageBridge = {
+  readonly port: number;
+  readonly authToken: string;
+};
+
 export type LaneRuntimeState = {
   readonly laneId: string;
   readonly isActive: boolean;
@@ -56,6 +61,7 @@ export type LaneRuntimeState = {
   readonly currentSummary: string | null;
   readonly needsInput: string | null;
   readonly lastHumanInstruction: string | null;
+  readonly messageBridge: LaneRuntimeMessageBridge | null;
 };
 
 export type ValidationIssue = {

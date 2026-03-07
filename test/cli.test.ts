@@ -55,6 +55,22 @@ test("pi-lane new creates a lane that list --json can see", async () => {
   assert.equal(parsed.lanes[0].repoPath, repoPath);
 });
 
+test("pi-lane context show and edit work", async () => {
+  const laneHome = await createTempLaneHome();
+  const repoPath = join(laneHome, "repo");
+  await mkdir(repoPath, {recursive: true});
+
+  await execCli(laneHome, ["new", "--id", "mt-core", "--repo", repoPath]);
+  await execCli(laneHome, ["context", "edit", "mt-core", "--text", "# mt-core\n\nCustom context"]);
+
+  const result = await execCli(laneHome, ["context", "show", "mt-core", "--json"]);
+  const parsed = JSON.parse(result.stdout);
+
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.laneId, "mt-core");
+  assert.match(parsed.text, /Custom context/);
+});
+
 async function execCli(laneHome: string, args: ReadonlyArray<string>) {
   return await execFileAsync("node", [cliPath, ...args], {
     cwd: repoRoot,

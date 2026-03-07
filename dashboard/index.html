@@ -24,6 +24,7 @@
       .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-bottom: 16px; }
       .panel { border: 1px solid #374151; border-radius: 10px; padding: 12px; background:#0f172a; margin-bottom: 14px; }
       .status-proposed { color: #fbbf24; }
+      .status-live { color: #34d399; }
       .status-open { color: #93c5fd; }
       .status-in_progress { color: #a78bfa; }
       .status-blocked { color: #f87171; }
@@ -76,6 +77,7 @@
               <span class="pill">repo ${escapeHtml(shortRepo(lane.lane.repoPath))}</span>
               <span class="pill">open ${lane.todoCounts.open}</span>
               <span class="pill">proposed ${lane.todoCounts.proposed}</span>
+              ${lane.runtimeState?.messageBridge ? '<span class="pill status-live">live</span>' : ''}
             </div>
           `;
           card.addEventListener('click', () => loadLane(lane.lane.id));
@@ -103,6 +105,7 @@
               <div class="panel"><strong>Bookmark</strong><div>${escapeHtml(detail.lane.jjBookmark || '—')}</div></div>
               <div class="panel"><strong>Mode</strong><div>${escapeHtml(runtime.mode || 'stopped')}</div></div>
               <div class="panel"><strong>Current TODO</strong><div>${escapeHtml(runtime.currentTodoId || '—')}</div></div>
+              <div class="panel"><strong>Live bridge</strong><div>${runtime.messageBridge ? `127.0.0.1:${escapeHtml(String(runtime.messageBridge.port))}` : 'offline'}</div></div>
             </div>
           </div>
 
@@ -126,6 +129,27 @@
             <div class="row">
               <button onclick="saveRuntime()">Save runtime</button>
             </div>
+          </div>
+
+          <div class="panel">
+            <h3>Lane context</h3>
+            <textarea id="laneContextText">${escapeHtml(detail.contextText || '')}</textarea>
+            <div class="row">
+              <button onclick="saveContext()">Save context</button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Message live lane</h3>
+            <div class="row">
+              <select id="messageDeliveryMode">
+                <option value="followUp">followUp</option>
+                <option value="steer">steer</option>
+              </select>
+              <button onclick="sendLaneMessage()" ${runtime.messageBridge ? '' : 'disabled'}>Send</button>
+            </div>
+            <textarea id="laneMessageText" placeholder="Send a message into the active pi lane session" ${runtime.messageBridge ? '' : 'disabled'}></textarea>
+            <div class="muted">${runtime.messageBridge ? 'This lane has a live bridge.' : 'This lane is offline or was not started with the lane bridge.'}</div>
           </div>
 
           <div class="panel">
@@ -189,6 +213,32 @@
             notes: document.getElementById('newNotes').value,
           }),
         });
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
+      async function saveContext() {
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/context`, {
+          method: 'PATCH',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({
+            text: document.getElementById('laneContextText').value,
+          }),
+        });
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
+      async function sendLaneMessage() {
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/message`, {
+          method: 'POST',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({
+            message: document.getElementById('laneMessageText').value,
+            deliverAs: document.getElementById('messageDeliveryMode').value,
+          }),
+        });
+        document.getElementById('laneMessageText').value = '';
         await refresh();
         await loadLane(selectedLaneId);
       }

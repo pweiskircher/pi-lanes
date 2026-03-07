@@ -69,6 +69,8 @@ Implemented now:
 - `pi-lane runtime clear-current-todo <lane-id> [--json]`
 - `pi-lane runtime set-mode <lane-id> <mode> [--json]`
 - `pi-lane runtime set-last-human-instruction <lane-id> --text ... [--json]`
+- `pi-lane context show <lane-id> [--json]`
+- `pi-lane context edit <lane-id> [--text ...] [--editor ...] [--json]`
 - runtime state file updates on lane start and stop
 - doctor checks for lane config, repo paths, TODO/runtime files, lane context files, and pi availability
 - validation and tests for TODO transitions, runtime state, and lane creation
@@ -103,6 +105,8 @@ Implemented now:
 
 The dashboard currently supports:
 - lane list and detail views
+- lane context editing
+- live message delivery into active lane sessions
 - TODO add/edit/delete
 - TODO approve/reject
 - TODO status changes
@@ -122,8 +126,8 @@ Lane-specific context works like a lightweight per-lane AGENTS-style note:
 - `.pi/settings.json`
 - `.pi/AGENTS.md`
 
-These are now wired into the repo and the lane startup flow. The extension is still intentionally small, but it now provides real lane commands, runtime update commands, and an LLM-facing TODO proposal tool.
+These are now wired into the repo and the lane startup flow. The extension is still intentionally small, but it now provides real lane commands, runtime update commands, an LLM-facing TODO proposal tool, and a local live-message bridge for active dashboard-controlled sessions.
 
 ## Next step
 
-Tighten live session control between the dashboard and running pi lane sessions, and add more explicit manager workflows on top of the lane model.
+Add richer manager workflows on top of the lane model, and refine the live-message/dashboard experience now that lane context editing and session messaging are wired in.

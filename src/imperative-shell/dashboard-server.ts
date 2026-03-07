@@ -3,22 +3,32 @@
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
 import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
-import {setRuntimeCurrentTodo, setRuntimeLastHumanInstruction, setRuntimeMode, setRuntimeNeedsInput, setRuntimeSummary} from "../functional-core/runtime-state.js";
 import {approveProposedTodo, createHumanTodo, deleteTodo, editTodo, rejectProposedTodo, setTodoStatus} from "../functional-core/todo-transitions.js";
-import {createStartedRuntimeState, createStoppedRuntimeState} from "../functional-core/runtime-state.js";
+import {
+  createStartedRuntimeState,
+  createStoppedRuntimeState,
+  setRuntimeCurrentTodo,
+  setRuntimeLastHumanInstruction,
+  setRuntimeMode,
+  setRuntimeNeedsInput,
+  setRuntimeSummary,
+} from "../functional-core/runtime-state.js";
 import {
   getDefaultLanePaths,
   getLaneById,
+  getLaneContextPath,
   loadLaneRegistry,
   loadLaneRuntimeState,
   loadLaneTodoFile,
   saveLaneRuntimeState,
   saveLaneTodoFile,
 } from "./lane-store.js";
-import type {Lane, LaneTodo, TodoPriority, TodoStatus} from "../types.js";
+import {readTextFile, writeTextFile} from "./json-files.js";
+import type {Lane, LaneRuntimeState, LaneTodo, TodoPriority, TodoStatus} from "../types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
 const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
+const messageDeliveryModes = new Set(["steer", "followUp"]);
 
 export async function serveDashboard(options: {readonly configRootPath: string; readonly toolRootPath: string; readonly port: number}): Promise<void> {
   const paths = getDefaultLanePaths(options.configRootPath);
@@ -30,8 +40,7 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
       if (method === "GET" && url.pathname === "/") {
-        const html = await readFile(htmlPath, "utf8");
-        sendHtml(response, html);
+        sendHtml(response, await readFile(htmlPath, "utf8"));
         return;
       }
 
@@ -42,8 +51,7 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
 
       const laneMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)$/);
       if (method === "GET" && laneMatch) {
-        const laneId = laneMatch[1] ?? "";
-        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
+        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneMatch[1] ?? "")});
         return;
       }
 
@@ -51,10 +59,9 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
       if (method === "PATCH" && runtimeMatch) {
         const laneId = runtimeMatch[1] ?? "";
         const body = await readJsonBody(request);
-        const lanes = await loadLaneRegistry(paths);
-        const lane = getLaneById(lanes, laneId);
+        const lane = getLaneById(await loadLaneRegistry(paths), laneId);
         const todoFile = await loadLaneTodoFile(paths, laneId);
-        let runtimeState = (await loadLaneRuntimeState(paths, laneId)) ?? createDefaultRuntimeState(lane);
+        let runtimeState = await loadOrCreateRuntimeState(paths, lane);
         const now = new Date().toISOString();
 
         if (Object.hasOwn(body, "currentSummary")) {
@@ -82,6 +89,44 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
         return;
       }
 
+      const contextMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/context$/);
+      if (method === "PATCH" && contextMatch) {
+        const laneId = contextMatch[1] ?? "";
+        getLaneById(await loadLaneRegistry(paths), laneId);
+        const body = await readJsonBody(request);
+        const text = readString(body, "text");
+        await writeTextFile(getLaneContextPath(paths, laneId), text.endsWith("\n") ? text : `${text}\n`);
+        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
+        return;
+      }
+
+      const messageMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/message$/);
+      if (method === "POST" && messageMatch) {
+        const laneId = messageMatch[1] ?? "";
+        const body = await readJsonBody(request);
+        const runtimeState = await loadLaneRuntimeState(paths, laneId);
+        if (!runtimeState?.messageBridge) {
+          throw new Error(`lane is not live-message enabled: ${laneId}`);
+        }
+
+        const message = readRequiredString(body, "message");
+        const deliverAs = parseMessageDeliveryMode(body.deliverAs);
+        const bridgeResponse = await fetch(`http://127.0.0.1:${runtimeState.messageBridge.port}/message`, {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify({message, deliverAs, authToken: runtimeState.messageBridge.authToken}),
+        });
+        const bridgeJson = (await bridgeResponse.json()) as Record<string, unknown>;
+        if (!bridgeResponse.ok || bridgeJson.ok !== true) {
+          throw new Error(typeof bridgeJson.error === "string" ? bridgeJson.error : `bridge request failed: ${bridgeResponse.status}`);
+        }
+
+        const updatedRuntimeState = setRuntimeLastHumanInstruction(runtimeState, message, new Date().toISOString());
+        await saveLaneRuntimeState(paths, updatedRuntimeState);
+        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId), delivery: bridgeJson});
+        return;
+      }
+
       const createTodoMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/todos$/);
       if (method === "POST" && createTodoMatch) {
         const laneId = createTodoMatch[1] ?? "";
@@ -91,13 +136,7 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
         const notes = readOptionalString(body, "notes");
         const todoFile = await loadLaneTodoFile(paths, laneId);
         const now = new Date().toISOString();
-        const result = createHumanTodo(todoFile, {
-          id: createNextTodoId(todoFile.todos),
-          title,
-          priority,
-          notes,
-          now,
-        });
+        const result = createHumanTodo(todoFile, {id: createNextTodoId(todoFile.todos), title, priority, notes, now});
         if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
         await saveLaneTodoFile(paths, result.data);
         sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
@@ -174,14 +213,32 @@ async function buildLaneDetail(paths: ReturnType<typeof getDefaultLanePaths>, la
   const lanes = await loadLaneRegistry(paths);
   const lane = getLaneById(lanes, laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
-  const runtimeState = (await loadLaneRuntimeState(paths, laneId)) ?? createDefaultRuntimeState(lane);
+  const runtimeState = await loadOrCreateRuntimeState(paths, lane);
+  const contextText = await readLaneContextText(paths, laneId);
   return {
     lane,
     runtimeState,
+    contextText,
     todos: todoFile.todos,
     groupedTodos: groupTodos(todoFile.todos),
     todoCounts: countTodos(todoFile.todos),
   };
+}
+
+async function loadOrCreateRuntimeState(paths: ReturnType<typeof getDefaultLanePaths>, lane: Lane): Promise<LaneRuntimeState> {
+  return (await loadLaneRuntimeState(paths, lane.id)) ?? createDefaultRuntimeState(lane);
+}
+
+async function readLaneContextText(paths: ReturnType<typeof getDefaultLanePaths>, laneId: string): Promise<string> {
+  const contextPath = getLaneContextPath(paths, laneId);
+  try {
+    return await readTextFile(contextPath);
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return "";
+    }
+    throw error;
+  }
 }
 
 function countTodos(todos: ReadonlyArray<LaneTodo>) {
@@ -215,8 +272,9 @@ function createNextTodoId(existingTodos: ReadonlyArray<LaneTodo>): string {
   let highestValue = 0;
   for (const todo of existingTodos) {
     const numericPart = Number.parseInt(todo.id.replace("todo-", ""), 10);
-    if (Number.isNaN(numericPart)) continue;
-    highestValue = Math.max(highestValue, numericPart);
+    if (!Number.isNaN(numericPart)) {
+      highestValue = Math.max(highestValue, numericPart);
+    }
   }
   return `todo-${String(highestValue + 1).padStart(3, "0")}`;
 }
@@ -238,6 +296,14 @@ function readRequiredString(body: Record<string, unknown>, key: string): string 
   return value;
 }
 
+function readString(body: Record<string, unknown>, key: string): string {
+  const value = body[key];
+  if (typeof value !== "string") {
+    throw new Error(`missing or invalid field: ${key}`);
+  }
+  return value;
+}
+
 function readOptionalString(body: Record<string, unknown>, key: string): string | null {
   const value = body[key];
   if (value === undefined || value === null) return null;
@@ -253,7 +319,9 @@ function readNullableString(body: Record<string, unknown>, key: string): string 
 }
 
 function parseTodoPriority(input: unknown): TodoPriority {
-  if (typeof input !== "string" || !todoPriorities.has(input as TodoPriority)) return "medium";
+  if (typeof input !== "string" || !todoPriorities.has(input as TodoPriority)) {
+    return "medium";
+  }
   return input as TodoPriority;
 }
 
@@ -264,6 +332,13 @@ function parseTodoStatus(input: unknown): TodoStatus {
   return input as TodoStatus;
 }
 
+function parseMessageDeliveryMode(input: unknown): "steer" | "followUp" {
+  if (typeof input !== "string" || !messageDeliveryModes.has(input)) {
+    return "followUp";
+  }
+  return input as "steer" | "followUp";
+}
+
 function sendJson(response: ServerResponse, statusCode: number, value: unknown): void {
   response.writeHead(statusCode, {"content-type": "application/json; charset=utf-8"});
   response.end(JSON.stringify(value, null, 2));
@@ -272,4 +347,8 @@ function sendJson(response: ServerResponse, statusCode: number, value: unknown):
 function sendHtml(response: ServerResponse, html: string): void {
   response.writeHead(200, {"content-type": "text/html; charset=utf-8"});
   response.end(html);
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
