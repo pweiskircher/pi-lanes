@@ -29,7 +29,18 @@ export type PiControlledSession = {
 };
 
 export async function findLaneControlledSession(lane: Lane): Promise<PiControlledSession | null> {
-  const sessions = await getControlledSessions();
+  return await findLaneControlledSessionInSessions(lane, await listControlledSessions());
+}
+
+export async function listControlledSessions(): Promise<ReadonlyArray<PiControlledSession>> {
+  const sockets = await getLiveSockets();
+  return await Promise.all(sockets.map(async socket => await hydrateSocket(socket)));
+}
+
+export async function findLaneControlledSessionInSessions(
+  lane: Lane,
+  sessions: ReadonlyArray<PiControlledSession>,
+): Promise<PiControlledSession | null> {
   const nameMatches = sessions.filter(session => session.name === lane.sessionName || session.aliases.includes(lane.sessionName));
   if (nameMatches.length === 1) {
     return nameMatches[0] ?? null;
@@ -38,12 +49,7 @@ export async function findLaneControlledSession(lane: Lane): Promise<PiControlle
   if (cwdMatches.length === 1) {
     return cwdMatches[0] ?? null;
   }
-  return await findLatestLaneSessionFromFiles(lane);
-}
-
-async function getControlledSessions(): Promise<ReadonlyArray<PiControlledSession>> {
-  const sockets = await getLiveSockets();
-  return await Promise.all(sockets.map(async socket => await hydrateSocket(socket)));
+  return null;
 }
 
 async function getLiveSockets(): Promise<ReadonlyArray<{readonly sessionId: string; readonly socketPath: string; readonly name: string | null; readonly aliases: ReadonlyArray<string>}>> {
@@ -239,45 +245,6 @@ async function findSessionFile(sessionId: string, cwd: string): Promise<string |
   }
 
   return null;
-}
-
-async function findLatestLaneSessionFromFiles(lane: Lane): Promise<PiControlledSession | null> {
-  const directory = join(SESSION_DIR, encodeWorkspacePath(lane.repoPath));
-  const entries = await safeReadDir(directory);
-  const files = await Promise.all(
-    entries
-      .filter(entry => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .map(async entry => {
-        const filePath = join(directory, entry.name);
-        try {
-          const stat = await fs.stat(filePath);
-          return {filePath, mtimeMs: stat.mtimeMs};
-        } catch {
-          return null;
-        }
-      }),
-  );
-
-  const latest = files.filter((value): value is {readonly filePath: string; readonly mtimeMs: number} => value !== null).sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
-  if (!latest) {
-    return null;
-  }
-
-  const header = await readSessionHeader(latest.filePath);
-  if (!header?.id) {
-    return null;
-  }
-  const recentMessages = await readRecentMessagesFromFile(latest.filePath, 10);
-  return {
-    sessionId: header.id,
-    name: lane.sessionName,
-    aliases: [lane.sessionName],
-    cwd: lane.repoPath,
-    isIdle: null,
-    lastUser: [...recentMessages].reverse().find(message => message.role === "user")?.content ?? null,
-    lastAssistant: [...recentMessages].reverse().find(message => message.role === "assistant")?.content ?? null,
-    recentMessages,
-  };
 }
 
 async function readSessionHeader(filePath: string): Promise<{readonly id: string} | null> {

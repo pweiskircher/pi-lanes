@@ -1,4 +1,4 @@
-import type {LaneLiveOutput, LaneResponse, SnapshotResponse} from "./types";
+import type {DashboardMessageDeliveryMode, LaneLiveOutputResponse, LaneResponse, SnapshotResponse} from "./types";
 
 export async function fetchSnapshot(): Promise<SnapshotResponse> {
   return await fetchJson<SnapshotResponse>("/api/snapshot");
@@ -16,7 +16,7 @@ export async function saveLaneContext(laneId: string, text: string): Promise<Lan
   });
 }
 
-export async function sendLaneMessage(laneId: string, message: string, deliverAs: "steer" | "followUp"): Promise<LaneResponse> {
+export async function sendLaneMessage(laneId: string, message: string, deliverAs: DashboardMessageDeliveryMode): Promise<LaneResponse> {
   return await fetchJson<LaneResponse>(`/api/lanes/${encodeURIComponent(laneId)}/message`, {
     method: "POST",
     headers: {"content-type": "application/json"},
@@ -24,8 +24,8 @@ export async function sendLaneMessage(laneId: string, message: string, deliverAs
   });
 }
 
-export async function fetchLaneLiveOutput(laneId: string): Promise<{readonly ok: true; readonly liveOutput: LaneLiveOutput | null}> {
-  return await fetchJson<{readonly ok: true; readonly liveOutput: LaneLiveOutput | null}>(`/api/lanes/${encodeURIComponent(laneId)}/live-output`);
+export async function fetchLaneLiveOutput(laneId: string): Promise<LaneLiveOutputResponse> {
+  return await fetchJson<LaneLiveOutputResponse>(`/api/lanes/${encodeURIComponent(laneId)}/live-output`);
 }
 
 export async function createTodo(laneId: string, payload: {readonly title: string; readonly priority: string; readonly notes: string}): Promise<LaneResponse> {

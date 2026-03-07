@@ -22,12 +22,28 @@ import {
   saveLaneTodoFile,
 } from "../storage/lane-store.js";
 import {readTextFile, writeTextFile} from "../storage/json-files.js";
-import {findLaneControlledSession} from "../pi/pi-session-control.js";
+import {findLaneControlledSessionInSessions, listControlledSessions, type PiControlledSession} from "../pi/pi-session-control.js";
+import type {
+  DashboardMessageDeliveryMode,
+  LaneHealth,
+  LaneLiveOutputResponse,
+  LaneResponse,
+  LaneSnapshot,
+  SnapshotResponse,
+} from "./dashboard-contracts.js";
 import type {Lane, LaneRuntimeState, LaneTodo, TodoPriority, TodoStatus} from "../types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
 const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
-const messageDeliveryModes = new Set(["steer", "followUp"]);
+const messageDeliveryModes = new Set<DashboardMessageDeliveryMode>(["steer", "followUp"]);
+const CONTROLLED_SESSION_CACHE_TTL_MS = 1000;
+
+type ControlledSessionCache = {
+  readonly expiresAt: number;
+  readonly sessions: ReadonlyArray<PiControlledSession>;
+};
+
+let controlledSessionCache: ControlledSessionCache | null = null;
 
 export async function serveDashboard(options: {readonly configRootPath: string; readonly toolRootPath: string; readonly port: number}): Promise<void> {
   const paths = getDefaultLanePaths(options.configRootPath);
@@ -55,13 +71,15 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
       }
 
       if (method === "GET" && url.pathname === "/api/snapshot") {
-        sendJson(response, 200, {ok: true, lanes: await buildSnapshot(paths)});
+        const payload: SnapshotResponse = {ok: true, lanes: await buildSnapshot(paths)};
+        sendJson(response, 200, payload);
         return;
       }
 
       const laneMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)$/);
       if (method === "GET" && laneMatch) {
-        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneMatch[1] ?? "")});
+        const payload: LaneResponse = {ok: true, lane: await buildLaneDetail(paths, laneMatch[1] ?? "")};
+        sendJson(response, 200, payload);
         return;
       }
 
@@ -131,7 +149,8 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
         const laneId = liveOutputMatch[1] ?? "";
         const runtimeState = await loadLaneRuntimeState(paths, laneId);
         if (!runtimeState?.messageBridge) {
-          sendJson(response, 200, {ok: true, liveOutput: null});
+          const payload: LaneLiveOutputResponse = {ok: true, liveOutput: null};
+          sendJson(response, 200, payload);
           return;
         }
 
@@ -143,12 +162,13 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
           throw new Error(typeof bridgeJson.error === "string" ? bridgeJson.error : `bridge request failed: ${bridgeResponse.status}`);
         }
 
-        sendJson(response, 200, {
+        const payload: LaneLiveOutputResponse = {
           ok: true,
           liveOutput: bridgeJson.liveOutput !== null && typeof bridgeJson.liveOutput === "object" && !Array.isArray(bridgeJson.liveOutput)
-            ? bridgeJson.liveOutput
+            ? bridgeJson.liveOutput as LaneLiveOutputResponse["liveOutput"]
             : null,
-        });
+        };
+        sendJson(response, 200, payload);
         return;
       }
 
@@ -229,19 +249,28 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
   console.log(`Dashboard listening on http://127.0.0.1:${options.port}`);
 }
 
-async function buildSnapshot(paths: ReturnType<typeof getDefaultLanePaths>) {
+async function buildSnapshot(paths: ReturnType<typeof getDefaultLanePaths>): Promise<ReadonlyArray<LaneSnapshot>> {
   const lanes = await loadLaneRegistry(paths);
-  return await Promise.all(lanes.map(async lane => await buildLaneDetail(paths, lane.id)));
+  const sessions = await loadControlledSessionsCached();
+  return await Promise.all(lanes.map(async lane => await buildLaneDetailFromLane(paths, lane, sessions)));
 }
 
-async function buildLaneDetail(paths: ReturnType<typeof getDefaultLanePaths>, laneId: string) {
+async function buildLaneDetail(paths: ReturnType<typeof getDefaultLanePaths>, laneId: string): Promise<LaneSnapshot> {
   const lanes = await loadLaneRegistry(paths);
   const lane = getLaneById(lanes, laneId);
-  const todoFile = await loadLaneTodoFile(paths, laneId);
+  return await buildLaneDetailFromLane(paths, lane, await loadControlledSessionsCached());
+}
+
+async function buildLaneDetailFromLane(
+  paths: ReturnType<typeof getDefaultLanePaths>,
+  lane: Lane,
+  controlledSessions: ReadonlyArray<PiControlledSession>,
+): Promise<LaneSnapshot> {
+  const todoFile = await loadLaneTodoFile(paths, lane.id);
   const runtimeState = await loadOrCreateRuntimeState(paths, lane);
-  const contextText = await readLaneContextText(paths, laneId);
-  const eventLog = await loadLaneEventLog(paths, laneId);
-  const liveSession = await findLaneControlledSession(lane);
+  const contextText = await readLaneContextText(paths, lane.id);
+  const eventLog = await loadLaneEventLog(paths, lane.id);
+  const liveSession = await findLaneControlledSessionInSessions(lane, controlledSessions);
   const liveSessionHealth = await readLiveSessionHealth(runtimeState, liveSession);
   return {
     lane,
@@ -251,13 +280,25 @@ async function buildLaneDetail(paths: ReturnType<typeof getDefaultLanePaths>, la
     contextText,
     recentEvents: eventLog.events.slice().reverse(),
     todos: todoFile.todos,
-    groupedTodos: groupTodos(todoFile.todos),
     todoCounts: countTodos(todoFile.todos),
   };
 }
 
 async function loadOrCreateRuntimeState(paths: ReturnType<typeof getDefaultLanePaths>, lane: Lane): Promise<LaneRuntimeState> {
   return (await loadLaneRuntimeState(paths, lane.id)) ?? createDefaultRuntimeState(lane);
+}
+
+async function loadControlledSessionsCached(nowMs = Date.now()): Promise<ReadonlyArray<PiControlledSession>> {
+  if (controlledSessionCache && controlledSessionCache.expiresAt > nowMs) {
+    return controlledSessionCache.sessions;
+  }
+
+  const sessions = await listControlledSessions();
+  controlledSessionCache = {
+    expiresAt: nowMs + CONTROLLED_SESSION_CACHE_TTL_MS,
+    sessions,
+  };
+  return sessions;
 }
 
 async function readLaneContextText(paths: ReturnType<typeof getDefaultLanePaths>, laneId: string): Promise<string> {
@@ -274,13 +315,8 @@ async function readLaneContextText(paths: ReturnType<typeof getDefaultLanePaths>
 
 async function readLiveSessionHealth(
   runtimeState: LaneRuntimeState,
-  liveSession: Awaited<ReturnType<typeof findLaneControlledSession>>,
-): Promise<{
-  readonly ok: boolean;
-  readonly isIdle: boolean;
-  readonly lastActivityAt: string | null;
-  readonly lastEventSummary: string | null;
-}> {
+  liveSession: PiControlledSession | null,
+): Promise<LaneHealth> {
   if (runtimeState.messageBridge) {
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), 500);
@@ -305,11 +341,20 @@ async function readLiveSessionHealth(
     }
   }
 
+  if (liveSession === null || liveSession.isIdle === null) {
+    return {
+      ok: false,
+      isIdle: true,
+      lastActivityAt: liveSession?.recentMessages[liveSession.recentMessages.length - 1]?.timestamp ?? null,
+      lastEventSummary: null,
+    };
+  }
+
   return {
-    ok: liveSession !== null,
-    isIdle: liveSession?.isIdle !== false,
-    lastActivityAt: liveSession?.recentMessages[liveSession.recentMessages.length - 1]?.timestamp ?? null,
-    lastEventSummary: liveSession?.lastAssistant ?? liveSession?.lastUser ?? null,
+    ok: true,
+    isIdle: liveSession.isIdle !== false,
+    lastActivityAt: liveSession.recentMessages[liveSession.recentMessages.length - 1]?.timestamp ?? null,
+    lastEventSummary: liveSession.lastAssistant ?? liveSession.lastUser ?? null,
   };
 }
 
@@ -404,11 +449,11 @@ function parseTodoStatus(input: unknown): TodoStatus {
   return input as TodoStatus;
 }
 
-function parseMessageDeliveryMode(input: unknown): "steer" | "followUp" {
-  if (typeof input !== "string" || !messageDeliveryModes.has(input)) {
+function parseMessageDeliveryMode(input: unknown): DashboardMessageDeliveryMode {
+  if (typeof input !== "string" || !messageDeliveryModes.has(input as DashboardMessageDeliveryMode)) {
     return "followUp";
   }
-  return input as "steer" | "followUp";
+  return input as DashboardMessageDeliveryMode;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, value: unknown): void {
