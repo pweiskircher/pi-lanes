@@ -123,14 +123,20 @@
             <h2 style="margin-bottom:4px;">${escapeHtml(detail.lane.id)}</h2>
             <div class="muted">${escapeHtml(detail.lane.title)}</div>
             <div class="lane-meta">
-              <span class="pill">repo ${escapeHtml(shortRepo(detail.lane.repoPath))}</span>
-              <span class="pill">bookmark ${escapeHtml(detail.lane.jjBookmark || '—')}</span>
               <span class="pill">mode ${escapeHtml(runtime.mode || 'stopped')}</span>
               <span class="pill">todo ${escapeHtml(runtime.currentTodoId || '—')}</span>
-              <span class="pill">bridge ${runtime.messageBridge ? `127.0.0.1:${escapeHtml(String(runtime.messageBridge.port))}` : 'offline'}</span>
               <span class="pill">health ${detail.liveSessionHealth?.ok ? (detail.liveSessionHealth.isIdle ? 'idle' : 'busy') : 'offline'}</span>
-              <span class="pill">activity ${escapeHtml(formatTimestamp(detail.liveSessionHealth?.lastActivityAt))}</span>
+              <span class="pill">activity ${escapeHtml(formatRelativeTime(detail.liveSessionHealth?.lastActivityAt))}</span>
             </div>
+            <details>
+              <summary>Lane details</summary>
+              <div class="lane-meta" style="margin-top:10px;">
+                <span class="pill">repo ${escapeHtml(shortRepo(detail.lane.repoPath))}</span>
+                <span class="pill">bookmark ${escapeHtml(detail.lane.jjBookmark || '—')}</span>
+                <span class="pill">bridge ${runtime.messageBridge ? `127.0.0.1:${escapeHtml(String(runtime.messageBridge.port))}` : 'offline'}</span>
+                <span class="pill">last activity ${escapeHtml(formatTimestamp(detail.liveSessionHealth?.lastActivityAt))}</span>
+              </div>
+            </details>
           </div>
 
           <div class="panel">
@@ -382,6 +388,20 @@
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return String(value);
         return date.toLocaleString();
+      }
+
+      function formatRelativeTime(value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        const diffMs = Date.now() - date.getTime();
+        const diffMinutes = Math.floor(diffMs / 60000);
+        if (diffMinutes < 1) return 'just now';
+        if (diffMinutes < 60) return `${diffMinutes}m ago`;
+        const diffHours = Math.floor(diffMinutes / 60);
+        if (diffHours < 24) return `${diffHours}h ago`;
+        const diffDays = Math.floor(diffHours / 24);
+        return `${diffDays}d ago`;
       }
 
       function escapeHtml(value) {
