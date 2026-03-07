@@ -3,6 +3,7 @@
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
 import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
+import {setRuntimeCurrentTodo, setRuntimeLastHumanInstruction, setRuntimeMode, setRuntimeNeedsInput, setRuntimeSummary} from "../functional-core/runtime-state.js";
 import {approveProposedTodo, createHumanTodo, deleteTodo, editTodo, rejectProposedTodo, setTodoStatus} from "../functional-core/todo-transitions.js";
 import {
   getDefaultLanePaths,
@@ -10,6 +11,7 @@ import {
   loadLaneRegistry,
   loadLaneRuntimeState,
   loadLaneTodoFile,
+  saveLaneRuntimeState,
   saveLaneTodoFile,
 } from "./lane-store.js";
 import type {LaneTodo, TodoPriority, TodoStatus} from "../types.js";
@@ -40,6 +42,45 @@ export async function serveDashboard(options: {readonly rootPath: string; readon
       const laneMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)$/);
       if (method === "GET" && laneMatch) {
         const laneId = laneMatch[1] ?? "";
+        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
+        return;
+      }
+
+      const runtimeMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/runtime$/);
+      if (method === "PATCH" && runtimeMatch) {
+        const laneId = runtimeMatch[1] ?? "";
+        const body = await readJsonBody(request);
+        const lanes = await loadLaneRegistry(paths);
+        const lane = getLaneById(lanes, laneId);
+        const todoFile = await loadLaneTodoFile(paths, laneId);
+        let runtimeState = (await loadLaneRuntimeState(paths, laneId)) ?? createDefaultRuntimeState(lane);
+        const now = new Date().toISOString();
+
+        if (Object.hasOwn(body, "currentSummary")) {
+          runtimeState = setRuntimeSummary(runtimeState, readNullableString(body, "currentSummary"), now);
+        }
+        if (Object.hasOwn(body, "needsInput")) {
+          runtimeState = setRuntimeNeedsInput(runtimeState, readNullableString(body, "needsInput"), now);
+        }
+        if (Object.hasOwn(body, "lastHumanInstruction")) {
+          runtimeState = setRuntimeLastHumanInstruction(runtimeState, readNullableString(body, "lastHumanInstruction"), now);
+        }
+        if (Object.hasOwn(body, "mode")) {
+          const modeResult = setRuntimeMode(runtimeState, readRequiredString(body, "mode"), now);
+          if (!modeResult.success) {
+            throw new Error(modeResult.issues.map(issue => issue.message).join("; "));
+          }
+          runtimeState = modeResult.data;
+        }
+        if (Object.hasOwn(body, "currentTodoId")) {
+          const currentTodoResult = setRuntimeCurrentTodo(runtimeState, todoFile, readNullableString(body, "currentTodoId"), now);
+          if (!currentTodoResult.success) {
+            throw new Error(currentTodoResult.issues.map(issue => issue.message).join("; "));
+          }
+          runtimeState = currentTodoResult.data;
+        }
+
+        await saveLaneRuntimeState(paths, runtimeState);
         sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
         return;
       }
@@ -151,7 +192,7 @@ async function buildLaneDetail(paths: ReturnType<typeof getDefaultLanePaths>, la
   const lanes = await loadLaneRegistry(paths);
   const lane = getLaneById(lanes, laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
-  const runtimeState = await loadLaneRuntimeState(paths, laneId);
+  const runtimeState = (await loadLaneRuntimeState(paths, laneId)) ?? createDefaultRuntimeState(lane);
   return {
     lane,
     runtimeState,
@@ -180,6 +221,24 @@ function groupTodos(todos: ReadonlyArray<LaneTodo>) {
     blocked: todos.filter(todo => todo.status === "blocked"),
     done: todos.filter(todo => todo.status === "done"),
     dropped: todos.filter(todo => todo.status === "dropped"),
+  };
+}
+
+function createDefaultRuntimeState(lane: {readonly id: string; readonly sessionName: string; readonly workspacePath: string; readonly port: number}) {
+  return {
+    laneId: lane.id,
+    isActive: false,
+    startedAt: null,
+    updatedAt: new Date().toISOString(),
+    sessionName: lane.sessionName,
+    sessionId: null,
+    workspacePath: lane.workspacePath,
+    port: lane.port,
+    mode: "stopped" as const,
+    currentTodoId: null,
+    currentSummary: null,
+    needsInput: null,
+    lastHumanInstruction: null,
   };
 }
 
@@ -215,6 +274,17 @@ function readRequiredString(body: Record<string, unknown>, key: string): string 
 }
 
 function readOptionalString(body: Record<string, unknown>, key: string): string | null {
+  const value = body[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw new Error(`invalid field: ${key}`);
+  }
+  return value;
+}
+
+function readNullableString(body: Record<string, unknown>, key: string): string | null {
   const value = body[key];
   if (value === undefined || value === null) {
     return null;

@@ -49,6 +49,9 @@
       let snapshot = [];
 
       document.getElementById('refreshButton').addEventListener('click', refresh);
+      setInterval(() => {
+        void refresh();
+      }, 10000);
 
       async function refresh() {
         const response = await fetch('/api/snapshot');
@@ -101,8 +104,28 @@
               <div class="panel"><strong>Mode</strong><div>${escapeHtml(runtime.mode || 'stopped')}</div></div>
               <div class="panel"><strong>Current TODO</strong><div>${escapeHtml(runtime.currentTodoId || '—')}</div></div>
             </div>
-            <div><strong>Summary:</strong> ${escapeHtml(runtime.currentSummary || '—')}</div>
-            <div><strong>Needs input:</strong> ${escapeHtml(runtime.needsInput || '—')}</div>
+          </div>
+
+          <div class="panel">
+            <h3>Runtime state</h3>
+            <div class="row">
+              <select id="runtimeMode">
+                ${['idle','interactive','working','waiting_for_input','blocked','stopped'].map(mode => `<option value="${mode}" ${runtime.mode === mode ? 'selected' : ''}>${mode}</option>`).join('')}
+              </select>
+              <select id="runtimeCurrentTodo">
+                <option value="">— no current TODO —</option>
+                ${detail.todos.filter(todo => todo.status !== 'proposed').map(todo => `<option value="${todo.id}" ${runtime.currentTodoId === todo.id ? 'selected' : ''}>${todo.id} — ${escapeHtml(todo.title)}</option>`).join('')}
+              </select>
+            </div>
+            <div style="margin-top:8px;"><strong>Summary</strong></div>
+            <textarea id="runtimeSummary">${escapeHtml(runtime.currentSummary || '')}</textarea>
+            <div style="margin-top:8px;"><strong>Needs input</strong></div>
+            <textarea id="runtimeNeedsInput">${escapeHtml(runtime.needsInput || '')}</textarea>
+            <div style="margin-top:8px;"><strong>Last human instruction</strong></div>
+            <textarea id="runtimeLastHumanInstruction">${escapeHtml(runtime.lastHumanInstruction || '')}</textarea>
+            <div class="row">
+              <button onclick="saveRuntime()">Save runtime</button>
+            </div>
           </div>
 
           <div class="panel">
@@ -157,7 +180,7 @@
       }
 
       async function createTodo() {
-        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos`, {
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos`, {
           method: 'POST',
           headers: {'content-type': 'application/json'},
           body: JSON.stringify({
@@ -170,8 +193,24 @@
         await loadLane(selectedLaneId);
       }
 
+      async function saveRuntime() {
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/runtime`, {
+          method: 'PATCH',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({
+            mode: document.getElementById('runtimeMode').value,
+            currentTodoId: document.getElementById('runtimeCurrentTodo').value || null,
+            currentSummary: document.getElementById('runtimeSummary').value,
+            needsInput: document.getElementById('runtimeNeedsInput').value,
+            lastHumanInstruction: document.getElementById('runtimeLastHumanInstruction').value,
+          }),
+        });
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
       async function saveTodo(todoId) {
-        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}`, {
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}`, {
           method: 'PATCH',
           headers: {'content-type': 'application/json'},
           body: JSON.stringify({
@@ -185,7 +224,7 @@
       }
 
       async function setStatus(todoId) {
-        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/status`, {
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/status`, {
           method: 'POST',
           headers: {'content-type': 'application/json'},
           body: JSON.stringify({status: document.getElementById(`status-${todoId}`).value}),
@@ -195,21 +234,30 @@
       }
 
       async function approveTodo(todoId) {
-        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/approve`, {method: 'POST'});
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/approve`, {method: 'POST'});
         await refresh();
         await loadLane(selectedLaneId);
       }
 
       async function rejectTodo(todoId) {
-        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/reject`, {method: 'POST'});
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/reject`, {method: 'POST'});
         await refresh();
         await loadLane(selectedLaneId);
       }
 
       async function deleteTodo(todoId) {
-        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}`, {method: 'DELETE'});
+        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}`, {method: 'DELETE'});
         await refresh();
         await loadLane(selectedLaneId);
+      }
+
+      async function api(url, options) {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.error || `Request failed: ${response.status}`);
+        }
+        return data;
       }
 
       function escapeHtml(value) {

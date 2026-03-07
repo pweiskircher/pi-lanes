@@ -94,6 +94,13 @@ The extension is still intentionally small, but it now provides:
 - `/lane-set-current-todo`
 - `lane_propose_todo` for LLM-proposed TODO capture
 
+The dashboard now complements those commands with HTTP-based editing for:
+- runtime summary
+- needs-input state
+- current TODO
+- runtime mode
+- lane TODO CRUD and review actions
+
 ## Suggested priority
 
 Implement in this order:

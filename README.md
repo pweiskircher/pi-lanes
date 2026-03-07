@@ -100,6 +100,13 @@ Implemented now:
 8. Run the local dashboard:
    - `node bin/pi-lane.mjs dashboard serve --port 4310`
 
+The dashboard currently supports:
+- lane list and detail views
+- TODO add/edit/delete
+- TODO approve/reject
+- TODO status changes
+- runtime summary / needs-input / current-TODO / mode editing
+
 ## Included pi workflow scaffolding
 
 - `skills/lane-context/SKILL.md`
@@ -113,4 +120,4 @@ These are now wired into the repo and the lane startup flow. The extension is st
 
 ## Next step
 
-Add dashboard support for runtime-state editing, then tighten live session control between the dashboard and running pi lane sessions.
+Tighten live session control between the dashboard and running pi lane sessions, and add more explicit manager workflows on top of the lane model.
