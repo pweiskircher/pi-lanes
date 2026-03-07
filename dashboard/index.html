@@ -112,6 +112,7 @@
         const response = await fetch(`/api/lanes/${encodeURIComponent(laneId)}`);
         const data = await response.json();
         renderLaneDetail(data.lane);
+        scrollConversationToBottom();
       }
 
       function renderLaneDetail(detail) {
@@ -135,7 +136,7 @@
           <div class="panel">
             <h3>Recent conversation</h3>
             <div class="muted">Last 10 lane messages, formatted for quick steering.</div>
-            <div class="conversation-scroll" style="margin-top:12px;">
+            <div id="conversationScroll" class="conversation-scroll" style="margin-top:12px;">
               ${(detail.liveSession?.recentMessages || []).length > 0 ? detail.liveSession.recentMessages.slice(-10).map(renderMessage).join('') : '<div class="muted">No recent session messages found.</div>'}
             </div>
           </div>
@@ -291,6 +292,7 @@
         document.getElementById('laneMessageText').value = '';
         await refresh();
         await loadLane(selectedLaneId);
+        scrollConversationToBottom();
       }
 
       async function saveTodo(todoId) {
@@ -347,6 +349,12 @@
       function shortRepo(value) {
         const parts = String(value).split('/').filter(Boolean);
         return parts.slice(-2).join('/') || value;
+      }
+
+      function scrollConversationToBottom() {
+        const element = document.getElementById('conversationScroll');
+        if (!element) return;
+        element.scrollTop = element.scrollHeight;
       }
 
       function loadSelectedLaneId() {
