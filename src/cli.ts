@@ -281,7 +281,7 @@ export async function main(argv: ReadonlyArray<string>): Promise<number> {
       await runWithHandling(() => runRuntimeSetLastHumanInstructionCommand(laneId, createCommandContext(options), options));
     });
 
-  cli.parse([...argv], {run: false});
+  cli.parse(["node", "pi-lane", ...argv], {run: false});
   const matchedCommand = cli.matchedCommand;
   if (!matchedCommand) {
     cli.outputHelp();
