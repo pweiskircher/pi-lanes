@@ -1,11 +1,161 @@
-// Placeholder extension design for future pi integration.
-//
-// Intended responsibilities:
-// - expose /lane-status
-// - expose /lane-todos
-// - expose /lane-propose-todo
-// - write runtime updates in a dashboard-friendly format
-// - align the live pi session with lane metadata
-//
-// This file exists as a scaffold and documentation anchor.
-export {};
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { createProposedTodo } from "../src/functional-core/todo-transitions.js";
+import { getDefaultLanePaths, loadLaneRegistry, loadLaneTodoFile, saveLaneTodoFile } from "../src/imperative-shell/lane-store.js";
+import type { Lane, LaneTodo, TodoPriority } from "../src/types.js";
+
+const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
+
+export default function (pi: ExtensionAPI) {
+  pi.on("session_start", async (_event, ctx) => {
+    const lane = await findCurrentLane();
+    if (!lane) {
+      return;
+    }
+
+    pi.setSessionName(lane.sessionName);
+    ctx.ui.notify(`lane: ${lane.id}`, "info");
+  });
+
+  pi.registerCommand("lane-status", {
+    description: "Show the current lane summary",
+    handler: async (_args, ctx) => {
+      const lane = await findCurrentLane();
+      if (!lane) {
+        ctx.ui.notify("No lane matched the current workspace", "warning");
+        return;
+      }
+
+      const todoFile = await loadLaneTodoFile(getLanePaths(), lane.id);
+      const openCount = todoFile.todos.filter(todo => todo.status === "open").length;
+      const proposedCount = todoFile.todos.filter(todo => todo.status === "proposed").length;
+      const text = [
+        `Lane: ${lane.id}`,
+        `Title: ${lane.title}`,
+        `Port: ${lane.port}`,
+        `Bookmark: ${lane.jjBookmark}`,
+        `Open TODOs: ${openCount}`,
+        `Proposed TODOs: ${proposedCount}`,
+      ].join("\n");
+
+      pi.sendMessage({
+        customType: "lane-status",
+        content: text,
+        display: true,
+        details: { laneId: lane.id },
+      });
+    },
+  });
+
+  pi.registerCommand("lane-todos", {
+    description: "Show current lane TODOs",
+    handler: async (_args, ctx) => {
+      const lane = await findCurrentLane();
+      if (!lane) {
+        ctx.ui.notify("No lane matched the current workspace", "warning");
+        return;
+      }
+
+      const todoFile = await loadLaneTodoFile(getLanePaths(), lane.id);
+      const text = formatTodos(todoFile.todos);
+      pi.sendMessage({
+        customType: "lane-todos",
+        content: text,
+        display: true,
+        details: { laneId: lane.id },
+      });
+    },
+  });
+
+  pi.registerTool({
+    name: "lane_propose_todo",
+    label: "Lane propose todo",
+    description: "Propose a new lane-scoped TODO for human review. Use this to capture follow-up work without starting it.",
+    parameters: Type.Object({
+      title: Type.String({ description: "Short actionable TODO title" }),
+      priority: Type.Optional(Type.String({ description: "low, medium, or high" })),
+      notes: Type.Optional(Type.String({ description: "Optional notes" })),
+      proposalReason: Type.String({ description: "Why this TODO should exist" }),
+    }),
+    async execute(_toolCallId, params) {
+      const lane = await findCurrentLane();
+      if (!lane) {
+        return {
+          content: [{ type: "text", text: "No lane matched the current workspace." }],
+          details: { ok: false },
+        };
+      }
+
+      const priority = parseTodoPriority(params.priority);
+      const paths = getLanePaths();
+      const todoFile = await loadLaneTodoFile(paths, lane.id);
+      const now = new Date().toISOString();
+      const result = createProposedTodo(todoFile, {
+        id: createNextTodoId(todoFile.todos),
+        title: params.title,
+        priority,
+        notes: typeof params.notes === "string" ? params.notes : null,
+        proposalReason: params.proposalReason,
+        now,
+      });
+
+      if (!result.success) {
+        return {
+          content: [{ type: "text", text: result.issues.map(issue => issue.message).join("; ") }],
+          details: { ok: false, issues: result.issues },
+        };
+      }
+
+      await saveLaneTodoFile(paths, result.data);
+      const todo = result.data.todos[result.data.todos.length - 1];
+      return {
+        content: [{ type: "text", text: `Proposed TODO ${todo?.id}: ${todo?.title}` }],
+        details: { ok: true, laneId: lane.id, todo },
+      };
+    },
+  });
+}
+
+function getLanePaths() {
+  return getDefaultLanePaths(getLanesRoot());
+}
+
+function getLanesRoot(): string {
+  const root = process.env.PI_LANES_ROOT;
+  if (!root) {
+    throw new Error("PI_LANES_ROOT is not set");
+  }
+  return root;
+}
+
+async function findCurrentLane(): Promise<Lane | null> {
+  const lanes = await loadLaneRegistry(getLanePaths());
+  const cwd = process.cwd();
+  return lanes.find(lane => lane.workspacePath === cwd) ?? null;
+}
+
+function createNextTodoId(existingTodos: ReadonlyArray<LaneTodo>): string {
+  let highestValue = 0;
+  for (const todo of existingTodos) {
+    const numericPart = Number.parseInt(todo.id.replace("todo-", ""), 10);
+    if (Number.isNaN(numericPart)) {
+      continue;
+    }
+    highestValue = Math.max(highestValue, numericPart);
+  }
+  return `todo-${String(highestValue + 1).padStart(3, "0")}`;
+}
+
+function parseTodoPriority(input: unknown): TodoPriority {
+  if (typeof input === "string" && todoPriorities.has(input as TodoPriority)) {
+    return input as TodoPriority;
+  }
+  return "medium";
+}
+
+function formatTodos(todos: ReadonlyArray<LaneTodo>): string {
+  if (todos.length === 0) {
+    return "No TODOs.";
+  }
+  return todos.map(todo => `- ${todo.id} [${todo.status}] (${todo.priority}) ${todo.title}`).join("\n");
+}

@@ -37,6 +37,52 @@ export function createHumanTodo(
   };
 }
 
+export function createProposedTodo(
+  todoFile: LaneTodoFile,
+  options: {
+    readonly id: string;
+    readonly title: string;
+    readonly priority: TodoPriority;
+    readonly notes: string | null;
+    readonly proposalReason: string;
+    readonly now: string;
+  },
+): ValidationResult<LaneTodoFile> {
+  if (todoFile.todos.some(todo => todo.id === options.id)) {
+    return {
+      success: false,
+      issues: [{path: `todos.${options.id}`, message: "todo id already exists"}],
+    };
+  }
+  if (options.title.trim().length === 0) {
+    return invalid("todo title cannot be empty");
+  }
+  if (options.proposalReason.trim().length === 0) {
+    return invalid("proposal reason cannot be empty");
+  }
+
+  const todo: LaneTodo = {
+    id: options.id,
+    title: options.title,
+    notes: options.notes,
+    status: "proposed",
+    priority: options.priority,
+    createdBy: "llm",
+    needsReview: true,
+    proposalReason: options.proposalReason,
+    createdAt: options.now,
+    updatedAt: options.now,
+  };
+
+  return {
+    success: true,
+    data: {
+      laneId: todoFile.laneId,
+      todos: [...todoFile.todos, todo],
+    },
+  };
+}
+
 export function approveProposedTodo(todoFile: LaneTodoFile, todoId: string, now: string): ValidationResult<LaneTodoFile> {
   return updateTodo(todoFile, todoId, now, todo => {
     if (todo.createdBy !== "llm") {

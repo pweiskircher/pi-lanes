@@ -1,0 +1,8 @@
+{
+  "skills": [
+    "../skills"
+  ],
+  "extensions": [
+    "../extensions/lane-bridge.ts"
+  ]
+}

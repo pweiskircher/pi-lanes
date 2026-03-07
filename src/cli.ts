@@ -326,7 +326,21 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
   const initialMessages = continueSession
     ? []
     : [`/name ${lane.sessionName}`, formatLaneStartupPrompt({lane, runtimeState, todoFile})];
-  const exitCode = await launchPi({cwd: lane.workspacePath, continueSession, initialMessages});
+  const exitCode = await launchPi({
+    cwd: lane.workspacePath,
+    continueSession,
+    initialMessages,
+    extensionPaths: [resolve(paths.rootPath, "extensions/lane-bridge.ts")],
+    skillPaths: [
+      resolve(paths.rootPath, "skills/lane-context/SKILL.md"),
+      resolve(paths.rootPath, "skills/lane-todo-hygiene/SKILL.md"),
+      resolve(paths.rootPath, "skills/lane-status-summary/SKILL.md"),
+    ],
+    environment: {
+      ...process.env,
+      PI_LANES_ROOT: paths.rootPath,
+    },
+  });
   await saveLaneRuntimeState(paths, createStoppedRuntimeState(runtimeState, toIsoNow()));
   return exitCode;
 }

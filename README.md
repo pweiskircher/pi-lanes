@@ -33,7 +33,8 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 - `examples/` — example lane files
 - `src/` — CLI and lane logic
 - `skills/` — lane-oriented pi skills
-- `extensions/` — extension scaffolding
+- `extensions/` — lane-oriented pi extension(s)
+- `.pi/` — local pi project config
 - `test/` — focused tests for pure lane logic
 
 ## Core model
@@ -70,7 +71,9 @@ Implemented now:
 - doctor checks for lane config, paths, TODO/runtime files, pi availability, and port usage
 - validation and tests for TODO transitions, runtime state, and lane creation
 - CLI parsing now uses `cac` instead of hand-rolled flag parsing
-- starter pi skills for lane context and TODO hygiene
+- starter pi skills for lane context, TODO hygiene, and compact lane summaries
+- project-local pi settings and AGENTS notes for this repo
+- `pi-lane-start` now injects the lane extension and skills into pi sessions
 
 ## Quick start
 
@@ -96,10 +99,13 @@ Implemented now:
 
 - `skills/lane-context/SKILL.md`
 - `skills/lane-todo-hygiene/SKILL.md`
+- `skills/lane-status-summary/SKILL.md`
 - `extensions/lane-bridge.ts`
+- `.pi/settings.json`
+- `.pi/AGENTS.md`
 
-These are starter artifacts for the pi-side workflow. The skills are ready to evolve; the extension is still a placeholder scaffold.
+These are now wired into the repo and the lane startup flow. The extension is still intentionally small, but it now provides real lane commands and an LLM-facing TODO proposal tool.
 
 ## Next step
 
-Improve pi session integration further, wire the placeholder extension into real pi commands/hooks, and connect the dashboard to the shared runtime and TODO files.
+Expand the lane extension with richer runtime update tools and commands, then build the dashboard against the shared JSON interfaces and runtime files.

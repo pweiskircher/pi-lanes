@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   approveProposedTodo,
   createHumanTodo,
+  createProposedTodo,
   deleteTodo,
   editTodo,
   rejectProposedTodo,
@@ -42,6 +43,31 @@ test("createHumanTodo appends an open todo", () => {
     createdAt: "2026-03-07T14:00:00Z",
     updatedAt: "2026-03-07T14:00:00Z",
   });
+});
+
+test("createProposedTodo appends an llm proposal", () => {
+  const todoFile: LaneTodoFile = {
+    laneId: "pdfua-paragraphs",
+    todos: [],
+  };
+
+  const result = createProposedTodo(todoFile, {
+    id: "todo-001",
+    title: "Check nested spans",
+    priority: "medium",
+    notes: null,
+    proposalReason: "Observed a grouping mismatch.",
+    now: "2026-03-07T14:00:00Z",
+  });
+
+  assert.equal(result.success, true);
+  if (!result.success) {
+    return;
+  }
+
+  assert.equal(result.data.todos[0]?.status, "proposed");
+  assert.equal(result.data.todos[0]?.createdBy, "llm");
+  assert.equal(result.data.todos[0]?.needsReview, true);
 });
 
 test("approveProposedTodo promotes an llm todo to open", () => {

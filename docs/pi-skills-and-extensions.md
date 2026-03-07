@@ -81,7 +81,15 @@ Purpose:
 This repo now includes:
 - `skills/lane-context/SKILL.md`
 - `skills/lane-todo-hygiene/SKILL.md`
-- `extensions/lane-bridge.ts` as a placeholder scaffold
+- `skills/lane-status-summary/SKILL.md`
+- `extensions/lane-bridge.ts`
+- `.pi/settings.json`
+
+The extension is still intentionally small, but it now provides:
+- automatic lane session naming on session start when it can match the workspace
+- `/lane-status`
+- `/lane-todos`
+- `lane_propose_todo` for LLM-proposed TODO capture
 
 ## Suggested priority
 
