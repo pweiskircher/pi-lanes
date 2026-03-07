@@ -49,6 +49,9 @@ Implemented now:
 - `pi-lane list`
 - `pi-lane show <lane-id>`
 - `pi-lane todo add <lane-id> --title ...`
+- `pi-lane todo edit <lane-id> <todo-id> ...`
+- `pi-lane todo delete <lane-id> <todo-id>`
+- `pi-lane todo set-status <lane-id> <todo-id> <status>`
 - `pi-lane todo approve <lane-id> <todo-id>`
 - `pi-lane todo reject <lane-id> <todo-id>`
 - runtime state file updates on lane start and stop
@@ -68,4 +71,4 @@ Implemented now:
 
 ## Next step
 
-Improve pi session integration, add more TODO editing commands, and connect the dashboard to the shared runtime and TODO files.
+Improve pi session integration, connect the dashboard to the shared runtime and TODO files, and add lane-aware pi skills/extensions.

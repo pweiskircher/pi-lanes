@@ -2,13 +2,32 @@
 
 import {existsSync} from "node:fs";
 import {resolve} from "node:path";
-import {createHumanTodo, approveProposedTodo, rejectProposedTodo} from "./functional-core/todo-transitions.js";
+import {
+  approveProposedTodo,
+  createHumanTodo,
+  deleteTodo,
+  editTodo,
+  rejectProposedTodo,
+  setTodoStatus,
+} from "./functional-core/todo-transitions.js";
 import {formatLaneBriefing} from "./functional-core/lane-briefing.js";
 import {createStartedRuntimeState, createStoppedRuntimeState} from "./functional-core/runtime-state.js";
-import {assertWorkspaceExists, getDefaultLanePaths, getLaneById, loadLaneRegistry, loadLaneRuntimeState, loadLaneTodoFile, saveLaneRuntimeState, saveLaneTodoFile} from "./imperative-shell/lane-store.js";
+import {
+  assertWorkspaceExists,
+  getDefaultLanePaths,
+  getLaneById,
+  loadLaneRegistry,
+  loadLaneRuntimeState,
+  loadLaneTodoFile,
+  saveLaneRuntimeState,
+  saveLaneTodoFile,
+} from "./imperative-shell/lane-store.js";
 import {ensurePiExists, launchPi} from "./imperative-shell/pi-launch.js";
 import {hasSavedPiSessionForCwd} from "./imperative-shell/pi-session-discovery.js";
-import type {CreateHumanTodoOptions, LaneTodo, TodoPriority} from "./types.js";
+import type {CreateHumanTodoOptions, LaneTodo, TodoPriority, TodoStatus} from "./types.js";
+
+const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
+const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
 
 export async function main(argv: ReadonlyArray<string>): Promise<number> {
   try {
@@ -126,8 +145,14 @@ async function runTodoCommand(argv: ReadonlyArray<string>): Promise<number> {
       return await runTodoApproveCommand(rest);
     case "reject":
       return await runTodoRejectCommand(rest);
+    case "edit":
+      return await runTodoEditCommand(rest);
+    case "delete":
+      return await runTodoDeleteCommand(rest);
+    case "set-status":
+      return await runTodoSetStatusCommand(rest);
     default:
-      throw new Error("usage: pi-lane todo <add|approve|reject> ...");
+      throw new Error("usage: pi-lane todo <add|approve|reject|edit|delete|set-status> ...");
   }
 }
 
@@ -142,11 +167,7 @@ async function runTodoAddCommand(argv: ReadonlyArray<string>): Promise<number> {
     throw new Error("missing required flag: --title");
   }
 
-  const priority = (readFlagValue(argv, "--priority") ?? "medium") as TodoPriority;
-  if (!["low", "medium", "high"].includes(priority)) {
-    throw new Error(`invalid priority: ${priority}`);
-  }
-
+  const priority = parseTodoPriority(readFlagValue(argv, "--priority") ?? "medium");
   const notes = readFlagValue(argv, "--notes") ?? null;
   const paths = getDefaultLanePaths(process.cwd());
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
@@ -200,6 +221,78 @@ async function runTodoRejectCommand(argv: ReadonlyArray<string>): Promise<number
   return 0;
 }
 
+async function runTodoEditCommand(argv: ReadonlyArray<string>): Promise<number> {
+  const [laneId, todoId] = argv;
+  if (!laneId || !todoId) {
+    throw new Error("usage: pi-lane todo edit <lane-id> <todo-id> [--title <title>] [--notes <notes>] [--priority high|medium|low]");
+  }
+
+  const title = readFlagValue(argv, "--title");
+  const notes = readFlagValue(argv, "--notes");
+  const priorityValue = readFlagValue(argv, "--priority");
+  const priority = priorityValue === null ? null : parseTodoPriority(priorityValue);
+
+  const paths = getDefaultLanePaths(process.cwd());
+  getLaneById(await loadLaneRegistry(paths), laneId);
+  const todoFile = await loadLaneTodoFile(paths, laneId);
+  const result = editTodo(
+    todoFile,
+    todoId,
+    {
+      title,
+      notes,
+      priority,
+    },
+    toIsoNow(),
+  );
+  if (!result.success) {
+    throw new Error(result.issues.map(issue => issue.message).join("; "));
+  }
+
+  await saveLaneTodoFile(paths, result.data);
+  console.log(`Edited TODO ${todoId} in ${laneId}`);
+  return 0;
+}
+
+async function runTodoDeleteCommand(argv: ReadonlyArray<string>): Promise<number> {
+  const [laneId, todoId] = argv;
+  if (!laneId || !todoId) {
+    throw new Error("usage: pi-lane todo delete <lane-id> <todo-id>");
+  }
+
+  const paths = getDefaultLanePaths(process.cwd());
+  getLaneById(await loadLaneRegistry(paths), laneId);
+  const todoFile = await loadLaneTodoFile(paths, laneId);
+  const result = deleteTodo(todoFile, todoId);
+  if (!result.success) {
+    throw new Error(result.issues.map(issue => issue.message).join("; "));
+  }
+
+  await saveLaneTodoFile(paths, result.data);
+  console.log(`Deleted TODO ${todoId} from ${laneId}`);
+  return 0;
+}
+
+async function runTodoSetStatusCommand(argv: ReadonlyArray<string>): Promise<number> {
+  const [laneId, todoId, statusValue] = argv;
+  if (!laneId || !todoId || !statusValue) {
+    throw new Error("usage: pi-lane todo set-status <lane-id> <todo-id> <open|in_progress|blocked|done|dropped>");
+  }
+
+  const status = parseTodoStatus(statusValue);
+  const paths = getDefaultLanePaths(process.cwd());
+  getLaneById(await loadLaneRegistry(paths), laneId);
+  const todoFile = await loadLaneTodoFile(paths, laneId);
+  const result = setTodoStatus(todoFile, todoId, status, toIsoNow());
+  if (!result.success) {
+    throw new Error(result.issues.map(issue => issue.message).join("; "));
+  }
+
+  await saveLaneTodoFile(paths, result.data);
+  console.log(`Set TODO ${todoId} in ${laneId} to ${status}`);
+  return 0;
+}
+
 function createHumanTodoOptions(options: {
   readonly title: string;
   readonly priority: TodoPriority;
@@ -228,6 +321,20 @@ function createNextTodoId(existingTodos: ReadonlyArray<LaneTodo>): string {
   return `todo-${String(highestValue + 1).padStart(3, "0")}`;
 }
 
+function parseTodoPriority(input: string): TodoPriority {
+  if (!todoPriorities.has(input as TodoPriority)) {
+    throw new Error(`invalid priority: ${input}`);
+  }
+  return input as TodoPriority;
+}
+
+function parseTodoStatus(input: string): TodoStatus {
+  if (!todoStatuses.has(input as TodoStatus)) {
+    throw new Error(`invalid status: ${input}`);
+  }
+  return input as TodoStatus;
+}
+
 function readFlagValue(argv: ReadonlyArray<string>, flagName: string): string | null {
   const index = argv.indexOf(flagName);
   if (index === -1) {
@@ -241,7 +348,7 @@ function toIsoNow(): string {
 }
 
 function printUsage(): void {
-  console.log(`pi-lane commands:\n  pi-lane start <lane-id> [--dry-run]\n  pi-lane list\n  pi-lane show <lane-id>\n  pi-lane todo add <lane-id> --title <title> [--priority high|medium|low] [--notes <notes>]\n  pi-lane todo approve <lane-id> <todo-id>\n  pi-lane todo reject <lane-id> <todo-id>`);
+  console.log(`pi-lane commands:\n  pi-lane start <lane-id> [--dry-run]\n  pi-lane list\n  pi-lane show <lane-id>\n  pi-lane todo add <lane-id> --title <title> [--priority high|medium|low] [--notes <notes>]\n  pi-lane todo approve <lane-id> <todo-id>\n  pi-lane todo reject <lane-id> <todo-id>\n  pi-lane todo edit <lane-id> <todo-id> [--title <title>] [--notes <notes>] [--priority high|medium|low]\n  pi-lane todo delete <lane-id> <todo-id>\n  pi-lane todo set-status <lane-id> <todo-id> <open|in_progress|blocked|done|dropped>`);
 }
 
 const isDirectExecution = import.meta.url === `file://${resolve(process.argv[1] ?? "")}`;

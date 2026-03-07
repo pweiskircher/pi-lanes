@@ -1,6 +1,8 @@
 // pattern: Functional Core
 
-import type {CreateHumanTodoOptions, LaneTodo, LaneTodoFile, ValidationResult} from "../types.js";
+import type {CreateHumanTodoOptions, LaneTodo, LaneTodoFile, TodoPriority, TodoStatus, ValidationResult} from "../types.js";
+
+const editableStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
 
 export function createHumanTodo(
   todoFile: LaneTodoFile,
@@ -48,7 +50,6 @@ export function approveProposedTodo(todoFile: LaneTodoFile, todoId: string, now:
       ...todo,
       status: "open",
       needsReview: false,
-      updatedAt: now,
     });
   });
 }
@@ -66,7 +67,6 @@ export function rejectProposedTodo(todoFile: LaneTodoFile, todoId: string, now: 
       ...todo,
       status: "dropped",
       needsReview: false,
-      updatedAt: now,
     });
   });
 }
@@ -80,9 +80,77 @@ export function markTodoInProgress(todoFile: LaneTodoFile, todoId: string, now: 
     return valid({
       ...todo,
       status: "in_progress",
-      updatedAt: now,
     });
   });
+}
+
+export function setTodoStatus(
+  todoFile: LaneTodoFile,
+  todoId: string,
+  status: TodoStatus,
+  now: string,
+): ValidationResult<LaneTodoFile> {
+  if (!editableStatuses.has(status)) {
+    return invalid(`status ${status} is not supported by manual status editing`);
+  }
+
+  return updateTodo(todoFile, todoId, now, todo => {
+    if (todo.createdBy === "llm" && todo.status === "proposed") {
+      return invalid(`todo ${todoId} must be approved or rejected before normal status changes`);
+    }
+
+    return valid({
+      ...todo,
+      status,
+    });
+  });
+}
+
+export function editTodo(
+  todoFile: LaneTodoFile,
+  todoId: string,
+  updates: {
+    readonly title: string | null;
+    readonly notes: string | null;
+    readonly priority: TodoPriority | null;
+  },
+  now: string,
+): ValidationResult<LaneTodoFile> {
+  if (updates.title === null && updates.notes === null && updates.priority === null) {
+    return invalid("at least one field must be updated");
+  }
+
+  return updateTodo(todoFile, todoId, now, todo => {
+    const nextTitle = updates.title ?? todo.title;
+    if (nextTitle.trim().length === 0) {
+      return invalid("todo title cannot be empty");
+    }
+
+    return valid({
+      ...todo,
+      title: nextTitle,
+      notes: updates.notes ?? todo.notes,
+      priority: updates.priority ?? todo.priority,
+    });
+  });
+}
+
+export function deleteTodo(todoFile: LaneTodoFile, todoId: string): ValidationResult<LaneTodoFile> {
+  const remainingTodos = todoFile.todos.filter(todo => todo.id !== todoId);
+  if (remainingTodos.length === todoFile.todos.length) {
+    return {
+      success: false,
+      issues: [{path: `todos.${todoId}`, message: "todo not found"}],
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      laneId: todoFile.laneId,
+      todos: remainingTodos,
+    },
+  };
 }
 
 function updateTodo(
