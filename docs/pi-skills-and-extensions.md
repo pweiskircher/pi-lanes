@@ -76,6 +76,13 @@ Purpose:
 - expose state or events that an external dashboard can consume
 - keep the TUI and dashboard aligned on lane identity
 
+## Current repo scaffolding
+
+This repo now includes:
+- `skills/lane-context/SKILL.md`
+- `skills/lane-todo-hygiene/SKILL.md`
+- `extensions/lane-bridge.ts` as a placeholder scaffold
+
 ## Suggested priority
 
 Implement in this order:

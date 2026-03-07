@@ -32,6 +32,8 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 - `schemas/` — JSON Schemas for lane data files
 - `examples/` — example lane files
 - `src/` — CLI and lane logic
+- `skills/` — lane-oriented pi skills
+- `extensions/` — extension scaffolding
 - `test/` — focused tests for pure lane logic
 
 ## Core model
@@ -46,6 +48,7 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 
 Implemented now:
 - `pi-lane new <lane-id> ... [--json]`
+- `pi-lane doctor [--json]`
 - `pi-lane-start <lane-id>` via `bin/pi-lane-start.mjs`
 - `pi-lane list [--json]`
 - `pi-lane show <lane-id> [--json]`
@@ -64,8 +67,10 @@ Implemented now:
 - `pi-lane runtime set-mode <lane-id> <mode> [--json]`
 - `pi-lane runtime set-last-human-instruction <lane-id> --text ... [--json]`
 - runtime state file updates on lane start and stop
-- validation and tests for TODO transitions and runtime state
+- doctor checks for lane config, paths, TODO/runtime files, pi availability, and port usage
+- validation and tests for TODO transitions, runtime state, and lane creation
 - CLI parsing now uses `cac` instead of hand-rolled flag parsing
+- starter pi skills for lane context and TODO hygiene
 
 ## Quick start
 
@@ -74,16 +79,27 @@ Implemented now:
 2. Create a lane:
    - `node bin/pi-lane.mjs new mt-core --title 'Multithreading large subsystem' --workspace /path/to/workspaces/mt-core --repo /path/to/repo --bookmark pat/mt-core --port 3001`
 3. Create any real lane workspaces you reference.
-4. Start a lane:
+4. Run a health check:
+   - `node bin/pi-lane.mjs doctor`
+5. Start a lane:
    - `node bin/pi-lane-start.mjs <lane-id>`
-5. Inspect lanes:
+6. Inspect lanes:
    - `node bin/pi-lane.mjs list`
    - `node bin/pi-lane.mjs show <lane-id>`
-6. For dashboard-friendly output, use JSON mode:
+7. For dashboard-friendly output, use JSON mode:
    - `node bin/pi-lane.mjs list --json`
    - `node bin/pi-lane.mjs show <lane-id> --json`
    - `node bin/pi-lane.mjs todo list <lane-id> --json`
+   - `node bin/pi-lane.mjs doctor --json`
+
+## Included pi workflow scaffolding
+
+- `skills/lane-context/SKILL.md`
+- `skills/lane-todo-hygiene/SKILL.md`
+- `extensions/lane-bridge.ts`
+
+These are starter artifacts for the pi-side workflow. The skills are ready to evolve; the extension is still a placeholder scaffold.
 
 ## Next step
 
-Improve pi session integration, connect the dashboard to the shared runtime and TODO files, and add lane-aware pi skills/extensions.
+Improve pi session integration further, wire the placeholder extension into real pi commands/hooks, and connect the dashboard to the shared runtime and TODO files.

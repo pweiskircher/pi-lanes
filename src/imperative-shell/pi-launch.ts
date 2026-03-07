@@ -7,6 +7,7 @@ import {constants as fsConstants} from "node:fs";
 export type LaunchPiOptions = {
   readonly cwd: string;
   readonly continueSession: boolean;
+  readonly initialMessages: ReadonlyArray<string>;
 };
 
 export async function ensurePiExists(): Promise<void> {
@@ -30,6 +31,7 @@ export async function ensurePiExists(): Promise<void> {
 
 export async function launchPi(options: LaunchPiOptions): Promise<number> {
   const args = options.continueSession ? ["-c"] : [];
+  args.push(...options.initialMessages);
 
   return await new Promise<number>((resolve, reject) => {
     const child = spawn("pi", args, {

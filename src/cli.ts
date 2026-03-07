@@ -12,7 +12,9 @@ import {
   rejectProposedTodo,
   setTodoStatus,
 } from "./functional-core/todo-transitions.js";
+import {buildDoctorLaneReport, buildDoctorReport} from "./functional-core/doctor.js";
 import {formatLaneBriefing} from "./functional-core/lane-briefing.js";
+import {formatLaneStartupPrompt} from "./functional-core/lane-startup-prompt.js";
 import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
@@ -26,6 +28,8 @@ import {
   assertWorkspaceExists,
   getDefaultLanePaths,
   getLaneById,
+  getLaneRuntimePath,
+  getLaneTodoPath,
   loadLaneRegistry,
   loadLaneRuntimeState,
   loadLaneTodoFile,
@@ -33,6 +37,7 @@ import {
   saveLaneRuntimeState,
   saveLaneTodoFile,
 } from "./imperative-shell/lane-store.js";
+import {getPortStatus} from "./imperative-shell/network.js";
 import {ensurePiExists, launchPi} from "./imperative-shell/pi-launch.js";
 import {hasSavedPiSessionForCwd} from "./imperative-shell/pi-session-discovery.js";
 import type {
@@ -141,6 +146,13 @@ export async function main(argv: ReadonlyArray<string>): Promise<number> {
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: NewLaneOptions) => {
       await runWithHandling(() => runNewLaneCommand(laneId, createCommandContext(options), options));
+    });
+
+  cli
+    .command("doctor", "Check lane setup health")
+    .option("--json", "Output JSON")
+    .action(async (options: JsonOption) => {
+      await runWithHandling(() => runDoctorCommand(createCommandContext(options)));
     });
 
   cli
@@ -311,9 +323,82 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
 
   await ensurePiExists();
   const continueSession = await hasSavedPiSessionForCwd(lane.workspacePath);
-  const exitCode = await launchPi({cwd: lane.workspacePath, continueSession});
+  const initialMessages = continueSession
+    ? []
+    : [`/name ${lane.sessionName}`, formatLaneStartupPrompt({lane, runtimeState, todoFile})];
+  const exitCode = await launchPi({cwd: lane.workspacePath, continueSession, initialMessages});
   await saveLaneRuntimeState(paths, createStoppedRuntimeState(runtimeState, toIsoNow()));
   return exitCode;
+}
+
+async function runDoctorCommand(context: CommandContext): Promise<number> {
+  const paths = getDefaultLanePaths(process.cwd());
+  const lanes = await loadLaneRegistry(paths);
+  let piAvailable = true;
+
+  try {
+    await ensurePiExists();
+  } catch {
+    piAvailable = false;
+  }
+
+  const laneReports = await Promise.all(
+    lanes.map(async lane => {
+      const todoPath = getLaneTodoPath(paths, lane.id);
+      const runtimePath = getLaneRuntimePath(paths, lane.id);
+      const workspaceExists = existsSync(lane.workspacePath);
+      const repoExists = existsSync(lane.repoPath);
+      const todoFileExists = existsSync(todoPath);
+      const runtimeFileExists = existsSync(runtimePath);
+      const todoFile = await loadLaneTodoFile(paths, lane.id);
+      const runtimeState = await loadLaneRuntimeState(paths, lane.id);
+      const portStatus = await getPortStatus(lane.port);
+
+      return buildDoctorLaneReport({
+        lane,
+        workspaceExists,
+        repoExists,
+        todoFileExists,
+        runtimeFileExists,
+        todoFile,
+        runtimeState,
+        portStatus,
+      });
+    }),
+  );
+
+  const report = buildDoctorReport({piAvailable, lanes: laneReports});
+  if (context.outputMode === "json") {
+    printJson(report);
+    return report.ok ? 0 : 1;
+  }
+
+  console.log(`pi available: ${report.piAvailable ? "yes" : "no"}`);
+  console.log(`lanes: ${report.laneCount}`);
+  for (const lane of report.lanes) {
+    console.log(`\n${lane.laneId}`);
+    console.log(`  workspace: ${lane.workspaceExists ? "ok" : "missing"}`);
+    console.log(`  repo: ${lane.repoExists ? "ok" : "missing"}`);
+    console.log(`  todo file: ${lane.todoFileExists ? "ok" : "missing"}`);
+    console.log(`  runtime file: ${lane.runtimeFileExists ? "ok" : "missing"}`);
+    console.log(`  port: ${lane.portStatus}`);
+    if (lane.issues.length > 0) {
+      for (const issue of lane.issues) {
+        console.log(`  issue: ${issue}`);
+      }
+    }
+    if (lane.warnings.length > 0) {
+      for (const warning of lane.warnings) {
+        console.log(`  warning: ${warning}`);
+      }
+    }
+  }
+
+  if (report.issues.length === 0 && report.warnings.length === 0) {
+    console.log("\nDoctor check passed.");
+  }
+
+  return report.ok ? 0 : 1;
 }
 
 async function runNewLaneCommand(laneId: string, context: CommandContext, options: NewLaneOptions): Promise<number> {
