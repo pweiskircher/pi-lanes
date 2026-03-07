@@ -28,11 +28,15 @@
       .status-busy { color: #f59e0b; }
       .status-open { color: #93c5fd; }
       .event { border-top: 1px solid #374151; padding: 8px 0; }
-      .message { border-top: 1px solid #374151; padding: 10px 0; }
+      .message { border-top: 1px solid #374151; padding: 12px 0; }
       .message-role { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; }
-      .message.user .message-body { border-left: 3px solid #60a5fa; padding-left: 10px; }
-      .message.assistant .message-body { border-left: 3px solid #34d399; padding-left: 10px; }
-      .message-body { white-space: pre-wrap; margin-top: 6px; }
+      .message.user .message-body { border-left: 3px solid #60a5fa; padding-left: 12px; }
+      .message.assistant .message-body { border-left: 3px solid #34d399; padding-left: 12px; }
+      .message-body { white-space: pre-wrap; margin-top: 6px; line-height: 1.45; }
+      .conversation-scroll { max-height: 420px; overflow: auto; padding-right: 8px; }
+      .composer textarea { min-height: 92px; }
+      details { margin-top: 12px; }
+      details > summary { cursor: pointer; user-select: none; }
       .status-in_progress { color: #a78bfa; }
       .status-blocked { color: #f87171; }
       .status-done { color: #34d399; }
@@ -127,34 +131,48 @@
           </div>
 
           <div class="panel">
-            <h3>Lane context</h3>
-            <textarea id="laneContextText">${escapeHtml(detail.contextText || '')}</textarea>
-            <div class="row">
-              <button onclick="saveContext()">Save context</button>
+            <h3>Recent conversation</h3>
+            <div class="muted">Last 10 lane messages, formatted for quick steering.</div>
+            <div class="conversation-scroll" style="margin-top:12px;">
+              ${(detail.liveSession?.recentMessages || []).length > 0 ? detail.liveSession.recentMessages.slice(-10).map(renderMessage).join('') : '<div class="muted">No recent session messages found.</div>'}
             </div>
           </div>
 
-          <div class="panel">
-            <h3>Message live lane</h3>
-            <div class="row">
+          <div class="panel composer">
+            <h3>Send message</h3>
+            <div class="muted">Send a steering message by default, or switch to follow-up.</div>
+            <div class="row" style="margin-top:12px;">
               <select id="messageDeliveryMode">
-                <option value="followUp">followUp</option>
-                <option value="steer">steer</option>
+                <option value="steer" selected>steer</option>
+                <option value="followUp">follow up</option>
               </select>
               <button onclick="sendLaneMessage()" ${runtime.messageBridge ? '' : 'disabled'}>Send</button>
             </div>
-            <textarea id="laneMessageText" placeholder="Send a message into the active pi lane session" ${runtime.messageBridge ? '' : 'disabled'}></textarea>
+            <textarea id="laneMessageText" placeholder="Tell the lane what to do next…" ${runtime.messageBridge ? '' : 'disabled'}></textarea>
             <div class="muted">${detail.liveSessionHealth?.ok ? `Lane is ${detail.liveSessionHealth.isIdle ? 'idle' : 'busy'}${detail.liveSessionHealth.lastEventSummary ? ` — ${escapeHtml(detail.liveSessionHealth.lastEventSummary)}` : ''}` : 'This lane is offline or was not started with the lane bridge.'}</div>
           </div>
 
           <div class="panel">
-            <h3>Recent conversation</h3>
-            ${(detail.liveSession?.recentMessages || []).length > 0 ? detail.liveSession.recentMessages.map(renderMessage).join('') : '<div class="muted">No recent session messages found.</div>'}
+            <details>
+              <summary>Lane settings</summary>
+              <div class="muted" style="margin-top:8px;">Lane-specific notes and configuration helpers.</div>
+              <div style="margin-top:12px;">
+                <strong>Lane context</strong>
+              </div>
+              <textarea id="laneContextText">${escapeHtml(detail.contextText || '')}</textarea>
+              <div class="row">
+                <button onclick="saveContext()">Save context</button>
+              </div>
+            </details>
           </div>
 
           <div class="panel">
-            <h3>Recent events</h3>
-            ${(detail.recentEvents || []).length > 0 ? detail.recentEvents.map(renderEvent).join('') : '<div class="muted">No recent events.</div>'}
+            <details>
+              <summary>Recent events</summary>
+              <div style="margin-top:12px;">
+                ${(detail.recentEvents || []).length > 0 ? detail.recentEvents.map(renderEvent).join('') : '<div class="muted">No recent events.</div>'}
+              </div>
+            </details>
           </div>
 
           <div class="panel">
