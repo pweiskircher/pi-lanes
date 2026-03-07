@@ -12,6 +12,15 @@ Use this skill whenever lane TODOs are discussed or modified.
 
 ## Rules
 
+### Required mechanism
+
+For this lane workflow:
+- do not use any generic or unrelated TODO extension/tool
+- do not create TODOs in chat-only form and assume they are tracked
+- use the lane-specific mechanism only:
+  - `lane_propose_todo` for LLM-proposed follow-up work
+  - lane CLI/dashboard commands for human TODO management
+
 ### Human-created TODOs
 
 Human-created TODOs:

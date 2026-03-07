@@ -38,6 +38,9 @@ export function formatLaneStartupPrompt(options: {
   lines.push("", "Rules:");
   lines.push("- TODOs do not auto-start.");
   lines.push("- LLM-proposed TODOs remain proposed until human review.");
+  lines.push("- For lane TODOs, do not use any generic or unrelated TODO extension/tool.");
+  lines.push("- To capture follow-up work, use the lane_propose_todo tool only.");
+  lines.push("- To inspect current lane TODOs, use /lane-todos or the lane todo file.");
   lines.push("- Keep lane updates grounded in actual TODOs and lane files.");
 
   return lines.join("\n");

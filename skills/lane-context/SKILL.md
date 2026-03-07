@@ -43,6 +43,10 @@ If the lane id is unclear, ask the user or infer it from the active lane session
 - A TODO starts only after explicit human instruction.
 - LLM-created TODOs must remain `proposed` until reviewed.
 - If you discover useful follow-up work, propose a TODO instead of silently broadening scope.
+- Use the lane-specific TODO path only:
+  - `lane_propose_todo` for LLM-created lane TODOs
+  - lane CLI/dashboard commands for human TODO changes
+- Do not use generic TODO extensions or unrelated TODO tools for lane work.
 
 ## Summary format
 

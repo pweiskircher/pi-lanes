@@ -124,7 +124,12 @@ Lane-specific context works like a lightweight per-lane AGENTS-style note:
 - `.pi/settings.json`
 - `.pi/AGENTS.md`
 
-These are now wired into the repo and the lane startup flow. The extension is still intentionally small, but it now provides real lane commands, runtime update commands, an LLM-facing TODO proposal tool, and a local live-message bridge for active dashboard-controlled sessions.
+These are now wired into the repo and the lane startup flow. The extension is still intentionally small, but it now provides real lane commands, an LLM-facing TODO proposal tool, and a local live-message bridge for active dashboard-controlled sessions.
+
+Lane startup prompt injection now explicitly tells pi to use the lane-specific TODO mechanism:
+- `lane_propose_todo` for LLM-proposed follow-up work
+- lane CLI/dashboard commands for human TODO management
+- not any generic TODO extension/tool
 
 ## Next step
 
