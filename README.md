@@ -1,8 +1,12 @@
 # pi lanes
 
-A lane-based workflow for pi.
+A lane-based workflow, CLI, and dashboard for pi.
 
-This repo defines a V1 for working across multiple concurrent efforts while keeping pi usable from both the TUI and a phone-friendly dashboard.
+This repo provides:
+- a CLI for creating, starting, inspecting, and deleting lanes
+- lane-scoped context, TODOs, runtime state, and event history
+- a local dashboard for steering active lane sessions
+- lane-aware pi skills and an extension-backed message bridge
 
 ## V1 goals
 
@@ -23,19 +27,20 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 
 ## Repo layout
 
-This repo contains the tooling implementation. Actual lane data now lives by default in `~/.config/pi-lanes/`.
+This repo contains the tooling implementation. Actual lane data lives by default in `~/.config/pi-lanes/`.
 
-Repo contents:
-- `docs/design-plans/pi-lanes-v1.md` — V1 design
-- `docs/plans/pi-lanes-v1-implementation.md` — staged implementation plan
-- `docs/pi-skills-and-extensions.md` — proposed pi customizations
-- `schemas/` — JSON Schemas for lane data files
-- `examples/` — example lane files
+Key directories:
+- `bin/` — CLI entrypoints
 - `src/` — CLI and lane logic
+- `dashboard-app/` — Preact dashboard source
+- `dashboard/` — built dashboard assets served by the backend
 - `skills/` — lane-oriented pi skills
 - `extensions/` — lane-oriented pi extension(s)
-- `.pi/` — local pi project config
-- `test/` — focused tests for pure lane logic
+- `docs/` — supporting docs
+- `schemas/` — JSON schemas for lane data files
+- `examples/` — example lane files
+- `.pi/` — local pi project config used for dogfooding
+- `test/` — tests
 
 ## Core model
 
@@ -49,72 +54,78 @@ Repo contents:
 
 Implemented now:
 - `pi-lane new [<lane-id>] [--repo <path>] ... [--json]`
-- `pi-lane doctor [--json]`
-- `pi-lane-start <lane-id> [-c|--continue]` via `bin/pi-lane-start.mjs`
+- `pi-lane start <lane-id> [-c|--continue] [--dry-run] [--json]`
+- `pi-lane delete <lane-id> [--yes] [--json]`
 - `pi-lane list [--json]`
 - `pi-lane show <lane-id> [--json]`
-- `pi-lane delete <lane-id> [--yes] [--json]`
+- `pi-lane doctor [--json]`
 - `pi-lane dashboard snapshot [--json]`
 - `pi-lane dashboard serve [--port 4310]`
-- `pi-lane todo list <lane-id> [--json]`
-- `pi-lane todo add <lane-id> --title ... [--json]`
-- `pi-lane todo edit <lane-id> <todo-id> ... [--json]`
-- `pi-lane todo delete <lane-id> <todo-id> [--json]`
-- `pi-lane todo set-status <lane-id> <todo-id> <status> [--json]`
-- `pi-lane todo approve <lane-id> <todo-id> [--json]`
-- `pi-lane todo reject <lane-id> <todo-id> [--json]`
-- `pi-lane runtime show <lane-id> [--json]`
-- `pi-lane runtime set-current-todo <lane-id> <todo-id> [--json]`
-- `pi-lane runtime clear-current-todo <lane-id> [--json]`
-- `pi-lane runtime set-mode <lane-id> <mode> [--json]`
-- `pi-lane context show <lane-id> [--json]`
-- `pi-lane context edit <lane-id> [--text ...] [--editor ...] [--json]`
-- runtime state file updates on lane start and stop
-- doctor checks for lane config, repo paths, TODO/runtime files, lane context files, and pi availability
-- validation and tests for TODO transitions, runtime state, and lane creation
-- CLI parsing now uses `commander` instead of hand-rolled flag parsing
-- starter pi skills for lane context, TODO hygiene, and compact lane summaries
-- project-local pi settings and AGENTS notes for this repo
-- `pi-lane-start` now injects the lane extension and skills into pi sessions
+- `pi-lane todo list|add|edit|delete|set-status|approve|reject ...`
+- `pi-lane runtime show|set-current-todo|clear-current-todo|set-mode ...`
+- `pi-lane context show|edit ...`
+- `pi-lane-start <lane-id> [-c|--continue]` via `bin/pi-lane-start.mjs`
+- new-lane onboarding on first fresh start
+- lane-scoped live messaging and live assistant-output streaming in the dashboard
+- lane-scoped context, TODOs, runtime state, and event history stored under `~/.config/pi-lanes/lanes/<lane-id>/`
 
-## Quick start
+## Installation
+
+### Local development
 
 1. Install dependencies:
    - `npm install`
-2. Create a lane:
-   - from inside a repo: `node bin/pi-lane.mjs new mt-core`
-   - or explicitly: `node bin/pi-lane.mjs new mt-core --repo /path/to/repo`
-3. Lane data is stored in `~/.config/pi-lanes/` by default.
-4. Each lane gets its own directory under `~/.config/pi-lanes/lanes/<lane-id>/`.
+2. Optionally expose the CLI globally while developing:
+   - `npm link`
+
+### Global install
+
+From the repo root, you can also install the binaries directly:
+- `npm install -g .`
+
+This provides:
+- `pi-lane`
+- `pi-lane-start`
+
+## Quick start
+
+1. Create a lane:
+   - from inside a repo: `pi-lane new mt-core`
+   - or explicitly: `pi-lane new mt-core --repo /path/to/repo`
+2. Lane data is stored in `~/.config/pi-lanes/` by default.
+3. Each lane gets its own directory under `~/.config/pi-lanes/lanes/<lane-id>/`.
    - context: `~/.config/pi-lanes/lanes/<lane-id>/context.md`
    - runtime: `~/.config/pi-lanes/lanes/<lane-id>/state/runtime.json`
    - todos: `~/.config/pi-lanes/lanes/<lane-id>/state/todos.json`
    - events: `~/.config/pi-lanes/lanes/<lane-id>/state/events.json`
-5. Run a health check:
-   - `node bin/pi-lane.mjs doctor`
-6. Start a lane:
-   - fresh start: `node bin/pi-lane-start.mjs <lane-id>`
-   - continue an existing saved pi session: `node bin/pi-lane-start.mjs <lane-id> --continue`
-   - on a brand-new lane, pi will use the first conversation to help onboard the lane, capture context, and optionally draft proposed TODOs.
-7. Inspect lanes:
-   - `node bin/pi-lane.mjs list`
-   - `node bin/pi-lane.mjs show <lane-id>`
+4. Run a health check:
+   - `pi-lane doctor`
+5. Start a lane:
+   - fresh start: `pi-lane-start <lane-id>`
+   - continue an existing saved pi session: `pi-lane-start <lane-id> --continue`
+   - on a brand-new lane, pi uses the first conversation to onboard the lane, capture context, and optionally draft proposed TODOs.
+6. Inspect lanes:
+   - `pi-lane list`
+   - `pi-lane show <lane-id>`
+7. Delete a lane:
+   - `pi-lane delete <lane-id>`
+   - `pi-lane delete <lane-id> --yes`
 8. For dashboard-friendly output, use JSON mode:
-   - `node bin/pi-lane.mjs list --json`
-   - `node bin/pi-lane.mjs show <lane-id> --json`
-   - `node bin/pi-lane.mjs dashboard snapshot --json`
-   - `node bin/pi-lane.mjs todo list <lane-id> --json`
-   - `node bin/pi-lane.mjs doctor --json`
+   - `pi-lane list --json`
+   - `pi-lane show <lane-id> --json`
+   - `pi-lane dashboard snapshot --json`
+   - `pi-lane todo list <lane-id> --json`
+   - `pi-lane doctor --json`
 9. Build and run the local dashboard:
    - `npm run dashboard:build`
-   - `node bin/pi-lane.mjs dashboard serve --port 4310`
+   - `pi-lane dashboard serve --port 4310`
 
 For frontend development with hot reload:
 - one-command mode: `npm run dashboard:dev:full`
 - open `http://127.0.0.1:4311`
 
 Or run the pieces separately:
-- start the backend API/server: `node bin/pi-lane.mjs dashboard serve --port 4310`
+- start the backend API/server: `pi-lane dashboard serve --port 4310`
 - in another terminal, start Vite: `npm run dashboard:dev`
 - open `http://127.0.0.1:4311`
 
@@ -122,7 +133,9 @@ The Vite dev server proxies `/api/*` to the dashboard backend on port `4310`.
 
 The dashboard currently supports:
 - lane list and detail views
+- faster lane switching using snapshot-backed client state
 - live lane health and idle/busy state
+- recent conversation with live in-progress assistant output
 - lane context editing
 - live message delivery into active lane sessions
 - recent lane event history
@@ -151,6 +164,9 @@ Lane startup prompt injection now explicitly tells pi to use the lane-specific T
 - lane CLI/dashboard commands for human TODO management
 - not any generic TODO extension/tool
 
-## Next step
+## Notes
 
-Add richer manager workflows on top of the lane model, and refine the live-message/dashboard experience now that lane context editing and session messaging are wired in.
+- The dashboard serves built assets from `dashboard/dist/`.
+- For active development, use `npm run dashboard:dev:full`.
+- Lane TODOs do not auto-start.
+- LLM-proposed TODOs stay `proposed` until a human approves them.
