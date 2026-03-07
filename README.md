@@ -2,6 +2,8 @@
 
 `pi-lanes` is a lane-based workflow, CLI, and dashboard for pi.
 
+![pi lanes dashboard](docs/images/dashboard-screenshot.png)
+
 It helps you split ongoing work into named lanes, each with its own:
 - repo association
 - lane context
