@@ -55,8 +55,16 @@ Implemented now:
 - `pi-lane todo set-status <lane-id> <todo-id> <status> [--json]`
 - `pi-lane todo approve <lane-id> <todo-id> [--json]`
 - `pi-lane todo reject <lane-id> <todo-id> [--json]`
+- `pi-lane runtime show <lane-id> [--json]`
+- `pi-lane runtime set-summary <lane-id> --text ... [--json]`
+- `pi-lane runtime set-question <lane-id> --text ... [--json]`
+- `pi-lane runtime set-current-todo <lane-id> <todo-id> [--json]`
+- `pi-lane runtime clear-current-todo <lane-id> [--json]`
+- `pi-lane runtime set-mode <lane-id> <mode> [--json]`
+- `pi-lane runtime set-last-human-instruction <lane-id> --text ... [--json]`
 - runtime state file updates on lane start and stop
-- validation and tests for TODO transitions
+- validation and tests for TODO transitions and runtime state
+- CLI parsing now uses `cac` instead of hand-rolled flag parsing
 
 ## Quick start
 

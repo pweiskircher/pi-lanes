@@ -2,6 +2,7 @@
 
 import {existsSync} from "node:fs";
 import {resolve} from "node:path";
+import {cac} from "cac";
 import {
   approveProposedTodo,
   createHumanTodo,
@@ -11,7 +12,15 @@ import {
   setTodoStatus,
 } from "./functional-core/todo-transitions.js";
 import {formatLaneBriefing} from "./functional-core/lane-briefing.js";
-import {createStartedRuntimeState, createStoppedRuntimeState} from "./functional-core/runtime-state.js";
+import {
+  createStartedRuntimeState,
+  createStoppedRuntimeState,
+  setRuntimeCurrentTodo,
+  setRuntimeLastHumanInstruction,
+  setRuntimeMode,
+  setRuntimePendingQuestion,
+  setRuntimeSummary,
+} from "./functional-core/runtime-state.js";
 import {
   assertWorkspaceExists,
   getDefaultLanePaths,
@@ -24,10 +33,20 @@ import {
 } from "./imperative-shell/lane-store.js";
 import {ensurePiExists, launchPi} from "./imperative-shell/pi-launch.js";
 import {hasSavedPiSessionForCwd} from "./imperative-shell/pi-session-discovery.js";
-import type {CreateHumanTodoOptions, Lane, LaneRuntimeState, LaneTodo, LaneTodoFile, TodoPriority, TodoStatus} from "./types.js";
+import type {
+  CreateHumanTodoOptions,
+  Lane,
+  LaneRuntimeMode,
+  LaneRuntimeState,
+  LaneTodo,
+  LaneTodoFile,
+  TodoPriority,
+  TodoStatus,
+} from "./types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
 const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
+const runtimeModes = new Set<LaneRuntimeMode>(["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]);
 
 type OutputMode = "text" | "json";
 
@@ -35,43 +54,194 @@ type CommandContext = {
   readonly outputMode: OutputMode;
 };
 
-export async function main(argv: ReadonlyArray<string>): Promise<number> {
-  try {
-    const parsed = parseGlobalFlags(argv);
-    const context: CommandContext = {
-      outputMode: parsed.outputMode,
-    };
-    const [command, ...rest] = parsed.argv;
+type JsonOption = {
+  readonly json?: boolean;
+};
 
-    switch (command) {
-      case "start":
-        return await runStartCommand(rest, context);
-      case "list":
-        return await runListCommand(context);
-      case "show":
-        return await runShowCommand(rest, context);
-      case "todo":
-        return await runTodoCommand(rest, context);
-      case undefined:
-        printUsage();
-        return 1;
-      default:
-        throw new Error(`unknown command: ${command}`);
-    }
+type StartOptions = JsonOption & {
+  readonly dryRun?: boolean;
+};
+
+type TodoAddOptions = JsonOption & {
+  readonly title?: string;
+  readonly priority?: string;
+  readonly notes?: string;
+};
+
+type TodoEditOptions = JsonOption & {
+  readonly title?: string;
+  readonly priority?: string;
+  readonly notes?: string;
+};
+
+type RuntimeTextOptions = JsonOption & {
+  readonly text?: string;
+};
+
+export async function main(argv: ReadonlyArray<string>): Promise<number> {
+  const cli = cac("pi-lane");
+  cli.help();
+  cli.version("0.1.0");
+
+  cli
+    .command("list", "List all lanes")
+    .option("--json", "Output JSON")
+    .action(async (options: JsonOption) => {
+      await runWithHandling(() => runListCommand(createCommandContext(options)));
+    });
+
+  cli
+    .command("show <laneId>", "Show one lane")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: JsonOption) => {
+      await runWithHandling(() => runShowCommand(laneId, createCommandContext(options)));
+    });
+
+  cli
+    .command("start <laneId>", "Start a lane")
+    .option("--dry-run", "Update runtime state but do not launch pi")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: StartOptions) => {
+      await runWithHandling(() => runStartCommand(laneId, createCommandContext(options), options));
+    });
+
+  cli
+    .command("todo list <laneId>", "List TODOs for a lane")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: JsonOption) => {
+      await runWithHandling(() => runTodoListCommand(laneId, createCommandContext(options)));
+    });
+
+  cli
+    .command("todo add <laneId>", "Add a TODO")
+    .option("--title <title>", "TODO title")
+    .option("--priority <priority>", "TODO priority")
+    .option("--notes <notes>", "TODO notes")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: TodoAddOptions) => {
+      await runWithHandling(() => runTodoAddCommand(laneId, createCommandContext(options), options));
+    });
+
+  cli
+    .command("todo approve <laneId> <todoId>", "Approve an LLM-proposed TODO")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, todoId: string, options: JsonOption) => {
+      await runWithHandling(() => runTodoApproveCommand(laneId, todoId, createCommandContext(options)));
+    });
+
+  cli
+    .command("todo reject <laneId> <todoId>", "Reject an LLM-proposed TODO")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, todoId: string, options: JsonOption) => {
+      await runWithHandling(() => runTodoRejectCommand(laneId, todoId, createCommandContext(options)));
+    });
+
+  cli
+    .command("todo edit <laneId> <todoId>", "Edit a TODO")
+    .option("--title <title>", "New title")
+    .option("--priority <priority>", "New priority")
+    .option("--notes <notes>", "New notes")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, todoId: string, options: TodoEditOptions) => {
+      await runWithHandling(() => runTodoEditCommand(laneId, todoId, createCommandContext(options), options));
+    });
+
+  cli
+    .command("todo delete <laneId> <todoId>", "Delete a TODO")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, todoId: string, options: JsonOption) => {
+      await runWithHandling(() => runTodoDeleteCommand(laneId, todoId, createCommandContext(options)));
+    });
+
+  cli
+    .command("todo set-status <laneId> <todoId> <status>", "Set TODO status")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, todoId: string, status: string, options: JsonOption) => {
+      await runWithHandling(() => runTodoSetStatusCommand(laneId, todoId, status, createCommandContext(options)));
+    });
+
+  cli
+    .command("runtime show <laneId>", "Show runtime state")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: JsonOption) => {
+      await runWithHandling(() => runRuntimeShowCommand(laneId, createCommandContext(options)));
+    });
+
+  cli
+    .command("runtime set-summary <laneId>", "Set runtime summary")
+    .option("--text <text>", "Summary text")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: RuntimeTextOptions) => {
+      await runWithHandling(() => runRuntimeSetSummaryCommand(laneId, createCommandContext(options), options));
+    });
+
+  cli
+    .command("runtime set-question <laneId>", "Set pending question")
+    .option("--text <text>", "Question text")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: RuntimeTextOptions) => {
+      await runWithHandling(() => runRuntimeSetQuestionCommand(laneId, createCommandContext(options), options));
+    });
+
+  cli
+    .command("runtime set-current-todo <laneId> <todoId>", "Set current runtime TODO")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, todoId: string, options: JsonOption) => {
+      await runWithHandling(() => runRuntimeSetCurrentTodoCommand(laneId, todoId, createCommandContext(options)));
+    });
+
+  cli
+    .command("runtime clear-current-todo <laneId>", "Clear current runtime TODO")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: JsonOption) => {
+      await runWithHandling(() => runRuntimeClearCurrentTodoCommand(laneId, createCommandContext(options)));
+    });
+
+  cli
+    .command("runtime set-mode <laneId> <mode>", "Set runtime mode")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, mode: string, options: JsonOption) => {
+      await runWithHandling(() => runRuntimeSetModeCommand(laneId, mode, createCommandContext(options)));
+    });
+
+  cli
+    .command("runtime set-last-human-instruction <laneId>", "Set last human instruction")
+    .option("--text <text>", "Instruction text")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: RuntimeTextOptions) => {
+      await runWithHandling(() => runRuntimeSetLastHumanInstructionCommand(laneId, createCommandContext(options), options));
+    });
+
+  cli.parse([...argv], {run: false});
+  const matchedCommand = cli.matchedCommand;
+  if (!matchedCommand) {
+    cli.outputHelp();
+    return 1;
+  }
+
+  await cli.runMatchedCommand();
+  return 0;
+}
+
+function createCommandContext(options: JsonOption): CommandContext {
+  return {
+    outputMode: options.json === true ? "json" : "text",
+  };
+}
+
+async function runWithHandling(action: () => Promise<number>): Promise<void> {
+  try {
+    const exitCode = await action();
+    process.exitCode = exitCode;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
-    return 1;
+    process.exitCode = 1;
   }
 }
 
-async function runStartCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const laneId = argv[0];
-  const dryRun = argv.includes("--dry-run");
-  if (!laneId) {
-    throw new Error("usage: pi-lane start <lane-id> [--dry-run] [--json]");
-  }
-
+async function runStartCommand(laneId: string, context: CommandContext, options: StartOptions): Promise<number> {
+  const dryRun = options.dryRun === true;
   const paths = getDefaultLanePaths(process.cwd());
   if (!existsSync(paths.configPath)) {
     throw new Error(`lane registry not found: ${paths.configPath}`);
@@ -82,22 +252,13 @@ async function runStartCommand(argv: ReadonlyArray<string>, context: CommandCont
 
   const todoFile = await loadLaneTodoFile(paths, lane.id);
   const existingRuntimeState = await loadLaneRuntimeState(paths, lane.id);
-  const runtimeState = createStartedRuntimeState({
-    lane,
-    existingRuntimeState,
-    now: toIsoNow(),
-  });
+  const runtimeState = createStartedRuntimeState({lane, existingRuntimeState, now: toIsoNow()});
 
   await saveLaneRuntimeState(paths, runtimeState);
 
   const briefing = buildLaneDetail(lane, runtimeState, todoFile);
   if (context.outputMode === "json") {
-    printJson({
-      ok: true,
-      action: "start",
-      lane: briefing,
-      dryRun,
-    });
+    printJson({ok: true, action: "start", lane: briefing, dryRun});
   } else {
     console.log(formatLaneBriefing({lane, runtimeState, todoFile}));
     console.log("");
@@ -112,11 +273,7 @@ async function runStartCommand(argv: ReadonlyArray<string>, context: CommandCont
 
   await ensurePiExists();
   const continueSession = await hasSavedPiSessionForCwd(lane.workspacePath);
-  const exitCode = await launchPi({
-    cwd: lane.workspacePath,
-    continueSession,
-  });
-
+  const exitCode = await launchPi({cwd: lane.workspacePath, continueSession});
   await saveLaneRuntimeState(paths, createStoppedRuntimeState(runtimeState, toIsoNow()));
   return exitCode;
 }
@@ -138,20 +295,13 @@ async function runListCommand(context: CommandContext): Promise<number> {
   }
 
   for (const summary of summaries) {
-    console.log(
-      `${summary.id}  ${summary.stateLabel}  port=${summary.port}  open=${summary.todoCounts.open}  proposed=${summary.todoCounts.proposed}`,
-    );
+    console.log(`${summary.id}  ${summary.stateLabel}  port=${summary.port}  open=${summary.todoCounts.open}  proposed=${summary.todoCounts.proposed}`);
   }
 
   return 0;
 }
 
-async function runShowCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const laneId = argv[0];
-  if (!laneId) {
-    throw new Error("usage: pi-lane show <lane-id> [--json]");
-  }
-
+async function runShowCommand(laneId: string, context: CommandContext): Promise<number> {
   const paths = getDefaultLanePaths(process.cwd());
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, lane.id);
@@ -174,34 +324,7 @@ async function runShowCommand(argv: ReadonlyArray<string>, context: CommandConte
   return 0;
 }
 
-async function runTodoCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const [subcommand, ...rest] = argv;
-  switch (subcommand) {
-    case "list":
-      return await runTodoListCommand(rest, context);
-    case "add":
-      return await runTodoAddCommand(rest, context);
-    case "approve":
-      return await runTodoApproveCommand(rest, context);
-    case "reject":
-      return await runTodoRejectCommand(rest, context);
-    case "edit":
-      return await runTodoEditCommand(rest, context);
-    case "delete":
-      return await runTodoDeleteCommand(rest, context);
-    case "set-status":
-      return await runTodoSetStatusCommand(rest, context);
-    default:
-      throw new Error("usage: pi-lane todo <list|add|approve|reject|edit|delete|set-status> ...");
-  }
-}
-
-async function runTodoListCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const laneId = argv[0];
-  if (!laneId) {
-    throw new Error("usage: pi-lane todo list <lane-id> [--json]");
-  }
-
+async function runTodoListCommand(laneId: string, context: CommandContext): Promise<number> {
   const paths = getDefaultLanePaths(process.cwd());
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
@@ -222,24 +345,18 @@ async function runTodoListCommand(argv: ReadonlyArray<string>, context: CommandC
   return 0;
 }
 
-async function runTodoAddCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const laneId = argv[0];
-  if (!laneId) {
-    throw new Error("usage: pi-lane todo add <lane-id> --title <title> [--priority high|medium|low] [--notes <notes>] [--json]");
-  }
-
-  const title = readFlagValue(argv, "--title");
-  if (!title) {
+async function runTodoAddCommand(laneId: string, context: CommandContext, options: TodoAddOptions): Promise<number> {
+  if (!options.title) {
     throw new Error("missing required flag: --title");
   }
 
-  const priority = parseTodoPriority(readFlagValue(argv, "--priority") ?? "medium");
-  const notes = readFlagValue(argv, "--notes") ?? null;
+  const priority = parseTodoPriority(options.priority ?? "medium");
+  const notes = options.notes ?? null;
   const paths = getDefaultLanePaths(process.cwd());
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, lane.id);
   const now = toIsoNow();
-  const result = createHumanTodo(todoFile, createHumanTodoOptions({title, priority, notes, now, existingTodos: todoFile.todos}));
+  const result = createHumanTodo(todoFile, createHumanTodoOptions({title: options.title, priority, notes, now, existingTodos: todoFile.todos}));
   if (!result.success) {
     throw new Error(result.issues.map(issue => issue.message).join("; "));
   }
@@ -249,17 +366,12 @@ async function runTodoAddCommand(argv: ReadonlyArray<string>, context: CommandCo
   if (context.outputMode === "json") {
     printJson({ok: true, action: "todo.add", laneId: lane.id, todo: createdTodo});
   } else {
-    console.log(`Created TODO in ${lane.id}: ${title}`);
+    console.log(`Created TODO in ${lane.id}: ${options.title}`);
   }
   return 0;
 }
 
-async function runTodoApproveCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const [laneId, todoId] = argv;
-  if (!laneId || !todoId) {
-    throw new Error("usage: pi-lane todo approve <lane-id> <todo-id> [--json]");
-  }
-
+async function runTodoApproveCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
   const paths = getDefaultLanePaths(process.cwd());
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
@@ -278,12 +390,7 @@ async function runTodoApproveCommand(argv: ReadonlyArray<string>, context: Comma
   return 0;
 }
 
-async function runTodoRejectCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const [laneId, todoId] = argv;
-  if (!laneId || !todoId) {
-    throw new Error("usage: pi-lane todo reject <lane-id> <todo-id> [--json]");
-  }
-
+async function runTodoRejectCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
   const paths = getDefaultLanePaths(process.cwd());
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
@@ -302,30 +409,12 @@ async function runTodoRejectCommand(argv: ReadonlyArray<string>, context: Comman
   return 0;
 }
 
-async function runTodoEditCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const [laneId, todoId] = argv;
-  if (!laneId || !todoId) {
-    throw new Error("usage: pi-lane todo edit <lane-id> <todo-id> [--title <title>] [--notes <notes>] [--priority high|medium|low] [--json]");
-  }
-
-  const title = readFlagValue(argv, "--title");
-  const notes = readFlagValue(argv, "--notes");
-  const priorityValue = readFlagValue(argv, "--priority");
-  const priority = priorityValue === null ? null : parseTodoPriority(priorityValue);
-
+async function runTodoEditCommand(laneId: string, todoId: string, context: CommandContext, options: TodoEditOptions): Promise<number> {
+  const priority = options.priority === undefined ? null : parseTodoPriority(options.priority);
   const paths = getDefaultLanePaths(process.cwd());
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
-  const result = editTodo(
-    todoFile,
-    todoId,
-    {
-      title,
-      notes,
-      priority,
-    },
-    toIsoNow(),
-  );
+  const result = editTodo(todoFile, todoId, {title: options.title ?? null, notes: options.notes ?? null, priority}, toIsoNow());
   if (!result.success) {
     throw new Error(result.issues.map(issue => issue.message).join("; "));
   }
@@ -340,12 +429,7 @@ async function runTodoEditCommand(argv: ReadonlyArray<string>, context: CommandC
   return 0;
 }
 
-async function runTodoDeleteCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const [laneId, todoId] = argv;
-  if (!laneId || !todoId) {
-    throw new Error("usage: pi-lane todo delete <lane-id> <todo-id> [--json]");
-  }
-
+async function runTodoDeleteCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
   const paths = getDefaultLanePaths(process.cwd());
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
@@ -364,12 +448,7 @@ async function runTodoDeleteCommand(argv: ReadonlyArray<string>, context: Comman
   return 0;
 }
 
-async function runTodoSetStatusCommand(argv: ReadonlyArray<string>, context: CommandContext): Promise<number> {
-  const [laneId, todoId, statusValue] = argv;
-  if (!laneId || !todoId || !statusValue) {
-    throw new Error("usage: pi-lane todo set-status <lane-id> <todo-id> <open|in_progress|blocked|done|dropped> [--json]");
-  }
-
+async function runTodoSetStatusCommand(laneId: string, todoId: string, statusValue: string, context: CommandContext): Promise<number> {
   const status = parseTodoStatus(statusValue);
   const paths = getDefaultLanePaths(process.cwd());
   getLaneById(await loadLaneRegistry(paths), laneId);
@@ -385,6 +464,106 @@ async function runTodoSetStatusCommand(argv: ReadonlyArray<string>, context: Com
     printJson({ok: true, action: "todo.set-status", laneId, todo});
   } else {
     console.log(`Set TODO ${todoId} in ${laneId} to ${status}`);
+  }
+  return 0;
+}
+
+async function runRuntimeShowCommand(laneId: string, context: CommandContext): Promise<number> {
+  const {runtimeState} = await loadRuntimeCommandState(laneId);
+  if (context.outputMode === "json") {
+    printJson({ok: true, laneId, runtimeState});
+  } else {
+    console.log(JSON.stringify(runtimeState, null, 2));
+  }
+  return 0;
+}
+
+async function runRuntimeSetSummaryCommand(laneId: string, context: CommandContext, options: RuntimeTextOptions): Promise<number> {
+  if (options.text === undefined) {
+    throw new Error("missing required flag: --text");
+  }
+  const {paths, runtimeState} = await loadRuntimeCommandState(laneId);
+  const updated = setRuntimeSummary(runtimeState, options.text, toIsoNow());
+  await saveLaneRuntimeState(paths, updated);
+  return printRuntimeMutationResult(context, "runtime.set-summary", laneId, updated, `Updated summary for ${laneId}`);
+}
+
+async function runRuntimeSetQuestionCommand(laneId: string, context: CommandContext, options: RuntimeTextOptions): Promise<number> {
+  if (options.text === undefined) {
+    throw new Error("missing required flag: --text");
+  }
+  const {paths, runtimeState} = await loadRuntimeCommandState(laneId);
+  const updated = setRuntimePendingQuestion(runtimeState, options.text, toIsoNow());
+  await saveLaneRuntimeState(paths, updated);
+  return printRuntimeMutationResult(context, "runtime.set-question", laneId, updated, `Updated pending question for ${laneId}`);
+}
+
+async function runRuntimeSetCurrentTodoCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
+  const {paths, runtimeState, todoFile} = await loadRuntimeCommandState(laneId);
+  const result = setRuntimeCurrentTodo(runtimeState, todoFile, todoId, toIsoNow());
+  if (!result.success) {
+    throw new Error(result.issues.map(issue => issue.message).join("; "));
+  }
+  await saveLaneRuntimeState(paths, result.data);
+  return printRuntimeMutationResult(context, "runtime.set-current-todo", laneId, result.data, `Set current todo for ${laneId} to ${todoId}`);
+}
+
+async function runRuntimeClearCurrentTodoCommand(laneId: string, context: CommandContext): Promise<number> {
+  const {paths, runtimeState, todoFile} = await loadRuntimeCommandState(laneId);
+  const result = setRuntimeCurrentTodo(runtimeState, todoFile, null, toIsoNow());
+  if (!result.success) {
+    throw new Error(result.issues.map(issue => issue.message).join("; "));
+  }
+  await saveLaneRuntimeState(paths, result.data);
+  return printRuntimeMutationResult(context, "runtime.clear-current-todo", laneId, result.data, `Cleared current todo for ${laneId}`);
+}
+
+async function runRuntimeSetModeCommand(laneId: string, mode: string, context: CommandContext): Promise<number> {
+  const parsedMode = parseRuntimeMode(mode);
+  const {paths, runtimeState} = await loadRuntimeCommandState(laneId);
+  const result = setRuntimeMode(runtimeState, parsedMode, toIsoNow());
+  if (!result.success) {
+    throw new Error(result.issues.map(issue => issue.message).join("; "));
+  }
+  await saveLaneRuntimeState(paths, result.data);
+  return printRuntimeMutationResult(context, "runtime.set-mode", laneId, result.data, `Set runtime mode for ${laneId} to ${parsedMode}`);
+}
+
+async function runRuntimeSetLastHumanInstructionCommand(laneId: string, context: CommandContext, options: RuntimeTextOptions): Promise<number> {
+  if (options.text === undefined) {
+    throw new Error("missing required flag: --text");
+  }
+  const {paths, runtimeState} = await loadRuntimeCommandState(laneId);
+  const updated = setRuntimeLastHumanInstruction(runtimeState, options.text, toIsoNow());
+  await saveLaneRuntimeState(paths, updated);
+  return printRuntimeMutationResult(context, "runtime.set-last-human-instruction", laneId, updated, `Updated last human instruction for ${laneId}`);
+}
+
+async function loadRuntimeCommandState(laneId: string): Promise<{
+  readonly paths: ReturnType<typeof getDefaultLanePaths>;
+  readonly runtimeState: LaneRuntimeState;
+  readonly todoFile: LaneTodoFile;
+}> {
+  const paths = getDefaultLanePaths(process.cwd());
+  const lane = getLaneById(await loadLaneRegistry(paths), laneId);
+  const now = toIsoNow();
+  const runtimeState =
+    (await loadLaneRuntimeState(paths, laneId)) ?? createStoppedRuntimeState(createStartedRuntimeState({lane, existingRuntimeState: null, now}), now);
+  const todoFile = await loadLaneTodoFile(paths, laneId);
+  return {paths, runtimeState, todoFile};
+}
+
+function printRuntimeMutationResult(
+  context: CommandContext,
+  action: string,
+  laneId: string,
+  runtimeState: LaneRuntimeState,
+  textMessage: string,
+): number {
+  if (context.outputMode === "json") {
+    printJson({ok: true, action, laneId, runtimeState});
+  } else {
+    console.log(textMessage);
   }
   return 0;
 }
@@ -488,30 +667,11 @@ function parseTodoStatus(input: string): TodoStatus {
   return input as TodoStatus;
 }
 
-function readFlagValue(argv: ReadonlyArray<string>, flagName: string): string | null {
-  const index = argv.indexOf(flagName);
-  if (index === -1) {
-    return null;
+function parseRuntimeMode(input: string): LaneRuntimeMode {
+  if (!runtimeModes.has(input as LaneRuntimeMode)) {
+    throw new Error(`invalid runtime mode: ${input}`);
   }
-  return argv[index + 1] ?? null;
-}
-
-function parseGlobalFlags(argv: ReadonlyArray<string>): {readonly argv: ReadonlyArray<string>; readonly outputMode: OutputMode} {
-  const filteredArgv: Array<string> = [];
-  let outputMode: OutputMode = "text";
-
-  for (const value of argv) {
-    if (value === "--json") {
-      outputMode = "json";
-      continue;
-    }
-    filteredArgv.push(value);
-  }
-
-  return {
-    argv: filteredArgv,
-    outputMode,
-  };
+  return input as LaneRuntimeMode;
 }
 
 function printJson(value: unknown): void {
@@ -520,10 +680,6 @@ function printJson(value: unknown): void {
 
 function toIsoNow(): string {
   return new Date().toISOString();
-}
-
-function printUsage(): void {
-  console.log(`pi-lane commands:\n  pi-lane list [--json]\n  pi-lane show <lane-id> [--json]\n  pi-lane start <lane-id> [--dry-run] [--json]\n  pi-lane todo list <lane-id> [--json]\n  pi-lane todo add <lane-id> --title <title> [--priority high|medium|low] [--notes <notes>] [--json]\n  pi-lane todo approve <lane-id> <todo-id> [--json]\n  pi-lane todo reject <lane-id> <todo-id> [--json]\n  pi-lane todo edit <lane-id> <todo-id> [--title <title>] [--notes <notes>] [--priority high|medium|low] [--json]\n  pi-lane todo delete <lane-id> <todo-id> [--json]\n  pi-lane todo set-status <lane-id> <todo-id> <open|in_progress|blocked|done|dropped> [--json]`);
 }
 
 const isDirectExecution = import.meta.url === `file://${resolve(process.argv[1] ?? "")}`;

@@ -1,6 +1,8 @@
 // pattern: Functional Core
 
-import type {Lane, LaneRuntimeState} from "../types.js";
+import type {Lane, LaneRuntimeMode, LaneRuntimeState, LaneTodoFile, ValidationResult} from "../types.js";
+
+const runtimeModes = new Set<LaneRuntimeMode>(["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]);
 
 export function createStartedRuntimeState(options: {
   readonly lane: Lane;
@@ -33,4 +35,104 @@ export function createStoppedRuntimeState(runtimeState: LaneRuntimeState, now: s
     updatedAt: now,
     mode: "stopped",
   };
+}
+
+export function setRuntimeSummary(runtimeState: LaneRuntimeState, summary: string | null, now: string): LaneRuntimeState {
+  return {
+    ...runtimeState,
+    updatedAt: now,
+    currentSummary: normalizeNullableText(summary),
+  };
+}
+
+export function setRuntimePendingQuestion(runtimeState: LaneRuntimeState, question: string | null, now: string): LaneRuntimeState {
+  return {
+    ...runtimeState,
+    updatedAt: now,
+    pendingQuestion: normalizeNullableText(question),
+  };
+}
+
+export function setRuntimeCurrentTodo(
+  runtimeState: LaneRuntimeState,
+  todoFile: LaneTodoFile,
+  todoId: string | null,
+  now: string,
+): ValidationResult<LaneRuntimeState> {
+  if (todoId === null) {
+    return {
+      success: true,
+      data: {
+        ...runtimeState,
+        updatedAt: now,
+        currentTodoId: null,
+      },
+    };
+  }
+
+  const todo = todoFile.todos.find(candidate => candidate.id === todoId);
+  if (!todo) {
+    return {
+      success: false,
+      issues: [{path: "currentTodoId", message: `todo not found: ${todoId}`}],
+    };
+  }
+
+  if (todo.status === "proposed") {
+    return {
+      success: false,
+      issues: [{path: "currentTodoId", message: `cannot set current todo to unreviewed proposal: ${todoId}`}],
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      ...runtimeState,
+      updatedAt: now,
+      currentTodoId: todoId,
+    },
+  };
+}
+
+export function setRuntimeMode(
+  runtimeState: LaneRuntimeState,
+  mode: string,
+  now: string,
+): ValidationResult<LaneRuntimeState> {
+  if (!runtimeModes.has(mode as LaneRuntimeMode)) {
+    return {
+      success: false,
+      issues: [{path: "mode", message: `invalid runtime mode: ${mode}`}],
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      ...runtimeState,
+      updatedAt: now,
+      mode: mode as LaneRuntimeMode,
+    },
+  };
+}
+
+export function setRuntimeLastHumanInstruction(
+  runtimeState: LaneRuntimeState,
+  instruction: string | null,
+  now: string,
+): LaneRuntimeState {
+  return {
+    ...runtimeState,
+    updatedAt: now,
+    lastHumanInstruction: normalizeNullableText(instruction),
+  };
+}
+
+function normalizeNullableText(value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
