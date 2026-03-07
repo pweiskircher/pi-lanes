@@ -37,9 +37,7 @@ export function parseLaneRegistry(input: unknown): ValidationResult<LaneRegistry
 
   const laneIds = new Set<string>();
   for (const lane of lanes) {
-    if (!lane) {
-      continue;
-    }
+    if (!lane) continue;
     if (laneIds.has(lane.id)) {
       issues.push({path: `$[id=${lane.id}]`, message: "lane id must be unique"});
       continue;
@@ -84,13 +82,7 @@ export function parseLaneTodoFile(input: unknown): ValidationResult<LaneTodoFile
     return failure(issues);
   }
 
-  return {
-    success: true,
-    data: {
-      laneId,
-      todos,
-    },
-  };
+  return {success: true, data: {laneId, todos}};
 }
 
 export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRuntimeState> {
@@ -106,15 +98,14 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
   const updatedAt = readRequiredIsoDate(objectValue.updatedAt, "$.updatedAt", issues);
   const sessionName = readNonEmptyString(objectValue.sessionName, "$.sessionName", issues);
   const sessionId = readOptionalString(objectValue.sessionId, "$.sessionId", issues);
-  const workspacePath = readNonEmptyString(objectValue.workspacePath, "$.workspacePath", issues);
-  const port = readPort(objectValue.port, "$.port", issues);
+  const repoPath = readNonEmptyString(objectValue.repoPath, "$.repoPath", issues);
   const mode = readEnum(objectValue.mode, "$.mode", runtimeModes, issues);
   const currentTodoId = readOptionalTodoId(objectValue.currentTodoId, "$.currentTodoId", issues);
   const currentSummary = readOptionalString(objectValue.currentSummary, "$.currentSummary", issues);
   const needsInput = readOptionalString(objectValue.needsInput, "$.needsInput", issues);
   const lastHumanInstruction = readOptionalString(objectValue.lastHumanInstruction, "$.lastHumanInstruction", issues);
 
-  if (issues.length > 0 || laneId === null || isActive === null || updatedAt === null || sessionName === null || workspacePath === null || port === null || mode === null) {
+  if (issues.length > 0 || laneId === null || isActive === null || updatedAt === null || sessionName === null || repoPath === null || mode === null) {
     return failure(issues);
   }
 
@@ -127,8 +118,7 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
       updatedAt,
       sessionName,
       sessionId,
-      workspacePath,
-      port,
+      repoPath,
       mode,
       currentTodoId,
       currentSummary,
@@ -146,10 +136,8 @@ function parseLane(input: unknown, path: string, issues: Array<ValidationIssue>)
 
   const id = readLaneId(objectValue.id, `${path}.id`, issues);
   const title = readNonEmptyString(objectValue.title, `${path}.title`, issues);
-  const workspacePath = readNonEmptyString(objectValue.workspacePath, `${path}.workspacePath`, issues);
   const repoPath = readNonEmptyString(objectValue.repoPath, `${path}.repoPath`, issues);
-  const jjBookmark = readNonEmptyString(objectValue.jjBookmark, `${path}.jjBookmark`, issues);
-  const port = readPort(objectValue.port, `${path}.port`, issues);
+  const jjBookmark = readOptionalString(objectValue.jjBookmark, `${path}.jjBookmark`, issues);
   const sessionName = readNonEmptyString(objectValue.sessionName, `${path}.sessionName`, issues);
   const serverCommand = readOptionalString(objectValue.serverCommand, `${path}.serverCommand`, issues);
   const priority = readOptionalEnum(objectValue.priority, `${path}.priority`, lanePriorities, issues);
@@ -157,17 +145,15 @@ function parseLane(input: unknown, path: string, issues: Array<ValidationIssue>)
   const notes = readOptionalString(objectValue.notes, `${path}.notes`, issues);
   const tags = readOptionalStringArray(objectValue.tags, `${path}.tags`, issues);
 
-  if (id === null || title === null || workspacePath === null || repoPath === null || jjBookmark === null || port === null || sessionName === null || tags === null) {
+  if (id === null || title === null || repoPath === null || sessionName === null || tags === null) {
     return null;
   }
 
   return {
     id,
     title,
-    workspacePath,
     repoPath,
     jjBookmark,
-    port,
     sessionName,
     serverCommand,
     priority,
@@ -195,15 +181,9 @@ function parseLaneTodo(input: unknown, path: string, issues: Array<ValidationIss
   const updatedAt = readRequiredIsoDate(objectValue.updatedAt, `${path}.updatedAt`, issues);
 
   if (createdBy === "llm") {
-    if (status !== "proposed") {
-      issues.push({path: `${path}.status`, message: 'llm-created todos must start as "proposed"'});
-    }
-    if (needsReview !== true) {
-      issues.push({path: `${path}.needsReview`, message: "llm-created todos must require review"});
-    }
-    if (!proposalReason) {
-      issues.push({path: `${path}.proposalReason`, message: "llm-created todos must include a proposal reason"});
-    }
+    if (status !== "proposed") issues.push({path: `${path}.status`, message: 'llm-created todos must start as "proposed"'});
+    if (needsReview !== true) issues.push({path: `${path}.needsReview`, message: "llm-created todos must require review"});
+    if (!proposalReason) issues.push({path: `${path}.proposalReason`, message: "llm-created todos must include a proposal reason"});
   }
 
   if (createdBy === "human" && needsReview === true) {
@@ -214,18 +194,7 @@ function parseLaneTodo(input: unknown, path: string, issues: Array<ValidationIss
     return null;
   }
 
-  return {
-    id,
-    title,
-    notes,
-    status,
-    priority,
-    createdBy,
-    needsReview,
-    proposalReason,
-    createdAt,
-    updatedAt,
-  };
+  return {id, title, notes, status, priority, createdBy, needsReview, proposalReason, createdAt, updatedAt};
 }
 
 function readObject(input: unknown, path: string, issues: Array<ValidationIssue>): Record<string, unknown> | null {
@@ -238,9 +207,7 @@ function readObject(input: unknown, path: string, issues: Array<ValidationIssue>
 
 function readLaneId(input: unknown, path: string, issues: Array<ValidationIssue>): string | null {
   const value = readNonEmptyString(input, path, issues);
-  if (value === null) {
-    return null;
-  }
+  if (value === null) return null;
   if (!LANE_ID_PATTERN.test(value)) {
     issues.push({path, message: "expected a lowercase lane id such as mt-core"});
     return null;
@@ -250,9 +217,7 @@ function readLaneId(input: unknown, path: string, issues: Array<ValidationIssue>
 
 function readTodoId(input: unknown, path: string, issues: Array<ValidationIssue>): string | null {
   const value = readNonEmptyString(input, path, issues);
-  if (value === null) {
-    return null;
-  }
+  if (value === null) return null;
   if (!TODO_ID_PATTERN.test(value)) {
     issues.push({path, message: "expected a todo id such as todo-001"});
     return null;
@@ -261,9 +226,7 @@ function readTodoId(input: unknown, path: string, issues: Array<ValidationIssue>
 }
 
 function readOptionalTodoId(input: unknown, path: string, issues: Array<ValidationIssue>): string | null {
-  if (input === undefined || input === null) {
-    return null;
-  }
+  if (input === undefined || input === null) return null;
   return readTodoId(input, path, issues);
 }
 
@@ -276,9 +239,7 @@ function readNonEmptyString(input: unknown, path: string, issues: Array<Validati
 }
 
 function readOptionalString(input: unknown, path: string, issues: Array<ValidationIssue>): string | null {
-  if (input === undefined || input === null) {
-    return null;
-  }
+  if (input === undefined || input === null) return null;
   if (typeof input !== "string") {
     issues.push({path, message: "expected a string or null"});
     return null;
@@ -287,14 +248,11 @@ function readOptionalString(input: unknown, path: string, issues: Array<Validati
 }
 
 function readOptionalStringArray(input: unknown, path: string, issues: Array<ValidationIssue>): ReadonlyArray<string> | null {
-  if (input === undefined || input === null) {
-    return [];
-  }
+  if (input === undefined || input === null) return [];
   if (!Array.isArray(input)) {
     issues.push({path, message: "expected an array of strings"});
     return null;
   }
-
   const values: Array<string> = [];
   for (const [index, value] of input.entries()) {
     if (typeof value !== "string" || value.trim().length === 0) {
@@ -303,16 +261,7 @@ function readOptionalStringArray(input: unknown, path: string, issues: Array<Val
     }
     values.push(value);
   }
-
   return values;
-}
-
-function readPort(input: unknown, path: string, issues: Array<ValidationIssue>): number | null {
-  if (typeof input !== "number" || !Number.isInteger(input) || input < 1 || input > 65535) {
-    issues.push({path, message: "expected an integer port between 1 and 65535"});
-    return null;
-  }
-  return input;
 }
 
 function readBoolean(input: unknown, path: string, issues: Array<ValidationIssue>): boolean | null {
@@ -332,18 +281,11 @@ function readRequiredIsoDate(input: unknown, path: string, issues: Array<Validat
 }
 
 function readOptionalIsoDate(input: unknown, path: string, issues: Array<ValidationIssue>): string | null {
-  if (input === undefined || input === null) {
-    return null;
-  }
+  if (input === undefined || input === null) return null;
   return readRequiredIsoDate(input, path, issues);
 }
 
-function readEnum<T extends string>(
-  input: unknown,
-  path: string,
-  allowedValues: ReadonlySet<T>,
-  issues: Array<ValidationIssue>,
-): T | null {
+function readEnum<T extends string>(input: unknown, path: string, allowedValues: ReadonlySet<T>, issues: Array<ValidationIssue>): T | null {
   if (typeof input !== "string" || !allowedValues.has(input as T)) {
     issues.push({path, message: `expected one of: ${Array.from(allowedValues).join(", ")}`});
     return null;
@@ -351,15 +293,8 @@ function readEnum<T extends string>(
   return input as T;
 }
 
-function readOptionalEnum<T extends string>(
-  input: unknown,
-  path: string,
-  allowedValues: ReadonlySet<T>,
-  issues: Array<ValidationIssue>,
-): T | null {
-  if (input === undefined || input === null) {
-    return null;
-  }
+function readOptionalEnum<T extends string>(input: unknown, path: string, allowedValues: ReadonlySet<T>, issues: Array<ValidationIssue>): T | null {
+  if (input === undefined || input === null) return null;
   return readEnum(input, path, allowedValues, issues);
 }
 

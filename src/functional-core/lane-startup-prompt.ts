@@ -6,8 +6,9 @@ export function formatLaneStartupPrompt(options: {
   readonly lane: Lane;
   readonly runtimeState: LaneRuntimeState;
   readonly todoFile: LaneTodoFile;
+  readonly laneContext: string | null;
 }): string {
-  const {lane, runtimeState, todoFile} = options;
+  const {lane, runtimeState, todoFile, laneContext} = options;
   const openTodos = todoFile.todos.filter(todo => todo.status === "open").map(todo => `- ${todo.id}: ${todo.title}`);
   const proposedTodos = todoFile.todos.filter(todo => todo.status === "proposed").map(todo => `- ${todo.id}: ${todo.title}`);
 
@@ -15,15 +16,17 @@ export function formatLaneStartupPrompt(options: {
     `You are working in lane ${lane.id}.`,
     `Session name should be ${lane.sessionName}.`,
     `Lane title: ${lane.title}`,
-    `Workspace: ${lane.workspacePath}`,
-    `JJ bookmark: ${lane.jjBookmark}`,
-    `Port: ${lane.port}`,
+    `Repository: ${lane.repoPath}`,
+    `JJ bookmark: ${lane.jjBookmark ?? "not set"}`,
     "Rules:",
     "- TODOs never auto-start.",
     "- LLM-created proposed TODOs require review before normal work.",
     "- Keep dashboard-visible summaries compact.",
   ];
 
+  if (laneContext) {
+    lines.push("Lane context:", laneContext.trim());
+  }
   if (runtimeState.currentSummary) {
     lines.push(`Latest summary: ${runtimeState.currentSummary}`);
   }

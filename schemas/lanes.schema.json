@@ -6,66 +6,20 @@
   "items": {
     "type": "object",
     "additionalProperties": false,
-    "required": [
-      "id",
-      "title",
-      "workspacePath",
-      "repoPath",
-      "jjBookmark",
-      "port",
-      "sessionName"
-    ],
+    "required": ["id", "title", "repoPath", "sessionName"],
     "properties": {
-      "id": {
-        "type": "string",
-        "pattern": "^[a-z0-9][a-z0-9-]*$"
-      },
-      "title": {
-        "type": "string",
-        "minLength": 1
-      },
-      "workspacePath": {
-        "type": "string",
-        "minLength": 1
-      },
-      "repoPath": {
-        "type": "string",
-        "minLength": 1
-      },
-      "jjBookmark": {
-        "type": "string",
-        "minLength": 1
-      },
-      "port": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 65535
-      },
-      "sessionName": {
-        "type": "string",
-        "minLength": 1
-      },
-      "serverCommand": {
-        "type": "string",
-        "minLength": 1
-      },
-      "priority": {
-        "type": "string",
-        "enum": ["main", "side", "parked"]
-      },
-      "status": {
-        "type": "string",
-        "enum": ["active", "paused", "archived"]
-      },
-      "notes": {
-        "type": "string"
-      },
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "title": {"type": "string", "minLength": 1},
+      "repoPath": {"type": "string", "minLength": 1},
+      "jjBookmark": {"type": "string", "minLength": 1},
+      "sessionName": {"type": "string", "minLength": 1},
+      "serverCommand": {"type": "string", "minLength": 1},
+      "priority": {"type": "string", "enum": ["main", "side", "parked"]},
+      "status": {"type": "string", "enum": ["active", "paused", "archived"]},
+      "notes": {"type": "string"},
       "tags": {
         "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        },
+        "items": {"type": "string", "minLength": 1},
         "uniqueItems": true
       }
     }

@@ -5,10 +5,8 @@ export type LaneStatus = "active" | "paused" | "archived";
 export type Lane = {
   readonly id: string;
   readonly title: string;
-  readonly workspacePath: string;
   readonly repoPath: string;
-  readonly jjBookmark: string;
-  readonly port: number;
+  readonly jjBookmark: string | null;
   readonly sessionName: string;
   readonly serverCommand: string | null;
   readonly priority: LanePriority | null;
@@ -52,8 +50,7 @@ export type LaneRuntimeState = {
   readonly updatedAt: string;
   readonly sessionName: string;
   readonly sessionId: string | null;
-  readonly workspacePath: string;
-  readonly port: number;
+  readonly repoPath: string;
   readonly mode: LaneRuntimeMode;
   readonly currentTodoId: string | null;
   readonly currentSummary: string | null;

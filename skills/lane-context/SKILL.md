@@ -10,22 +10,24 @@ user-invocable: true
 
 Use this skill to ground pi in the current lane before making decisions.
 
-A lane is the unit of work. The lane's metadata, TODOs, and runtime state are the source of truth for:
+A lane is the unit of work. The lane's metadata, TODOs, runtime state, and lane context file are the source of truth for:
 - what this lane is
-- what port and workspace it uses
+- which repository it uses
 - what TODOs exist
 - what the dashboard sees
 - what the current TODO and needs-input prompt are
+- what lane-specific notes or rules apply
 
 ## Required reads
 
 Before doing lane-aware work, read these files when they exist:
 
-1. `config/lanes.json`
-2. `state/runtime/<lane-id>.json`
-3. `state/todos/<lane-id>.json`
+1. `~/.config/pi-lanes/lanes.json`
+2. `~/.config/pi-lanes/state/runtime/<lane-id>.json`
+3. `~/.config/pi-lanes/state/todos/<lane-id>.json`
+4. `~/.config/pi-lanes/context/<lane-id>.md`
 
-If the lane id is unclear, ask the user or infer it from the active workspace and lane briefing.
+If the lane id is unclear, ask the user or infer it from the active lane session and lane briefing.
 
 ## Behavior rules
 

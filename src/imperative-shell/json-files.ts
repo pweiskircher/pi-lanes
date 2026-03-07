@@ -12,3 +12,12 @@ export async function writeJsonFile(path: string, value: unknown): Promise<void>
   await mkdir(dirname(path), {recursive: true});
   await writeFile(path, JSON.stringify(value, null, 2) + "\n", "utf8");
 }
+
+export async function readTextFile(path: string): Promise<string> {
+  return await readFile(path, "utf8");
+}
+
+export async function writeTextFile(path: string, content: string): Promise<void> {
+  await mkdir(dirname(path), {recursive: true});
+  await writeFile(path, content, "utf8");
+}

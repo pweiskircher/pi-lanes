@@ -73,7 +73,7 @@
             <div><strong>${escapeHtml(lane.lane.id)}</strong></div>
             <div class="muted">${escapeHtml(lane.lane.title)}</div>
             <div class="row" style="margin-top:8px;">
-              <span class="pill">port ${lane.lane.port}</span>
+              <span class="pill">repo ${escapeHtml(shortRepo(lane.lane.repoPath))}</span>
               <span class="pill">open ${lane.todoCounts.open}</span>
               <span class="pill">proposed ${lane.todoCounts.proposed}</span>
             </div>
@@ -99,8 +99,8 @@
             <h2>${escapeHtml(detail.lane.id)}</h2>
             <div class="muted">${escapeHtml(detail.lane.title)}</div>
             <div class="grid" style="margin-top:12px;">
-              <div class="panel"><strong>Port</strong><div>${detail.lane.port}</div></div>
-              <div class="panel"><strong>Bookmark</strong><div>${escapeHtml(detail.lane.jjBookmark)}</div></div>
+              <div class="panel"><strong>Repo</strong><div>${escapeHtml(detail.lane.repoPath)}</div></div>
+              <div class="panel"><strong>Bookmark</strong><div>${escapeHtml(detail.lane.jjBookmark || '—')}</div></div>
               <div class="panel"><strong>Mode</strong><div>${escapeHtml(runtime.mode || 'stopped')}</div></div>
               <div class="panel"><strong>Current TODO</strong><div>${escapeHtml(runtime.currentTodoId || '—')}</div></div>
             </div>
@@ -258,6 +258,11 @@
           throw new Error(data.error || `Request failed: ${response.status}`);
         }
         return data;
+      }
+
+      function shortRepo(value) {
+        const parts = String(value).split('/').filter(Boolean);
+        return parts.slice(-2).join('/') || value;
       }
 
       function escapeHtml(value) {

@@ -15,9 +15,8 @@ export function formatLaneBriefing(options: {
   const lines = [
     `Lane: ${lane.id}`,
     `Title: ${lane.title}`,
-    `Workspace: ${lane.workspacePath}`,
-    `JJ bookmark: ${lane.jjBookmark}`,
-    `Port: ${lane.port}`,
+    `Repo: ${lane.repoPath}`,
+    `JJ bookmark: ${lane.jjBookmark ?? "—"}`,
     `Session: ${lane.sessionName}`,
     `Open TODOs: ${openTodos.length}`,
     `Proposed TODOs: ${proposedTodos.length}`,

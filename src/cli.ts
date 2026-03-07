@@ -1,7 +1,8 @@
 // pattern: Imperative Shell
 
 import {existsSync} from "node:fs";
-import {resolve} from "node:path";
+import {resolve, dirname} from "node:path";
+import {fileURLToPath} from "node:url";
 import {Command} from "commander";
 import {createLane} from "./functional-core/lane-registry-transitions.js";
 import {
@@ -25,9 +26,11 @@ import {
   setRuntimeSummary,
 } from "./functional-core/runtime-state.js";
 import {
-  assertWorkspaceExists,
+  assertRepoExists,
+  ensureLaneHome,
   getDefaultLanePaths,
   getLaneById,
+  getLaneContextPath,
   getLaneRuntimePath,
   getLaneTodoPath,
   loadLaneRegistry,
@@ -37,8 +40,8 @@ import {
   saveLaneRuntimeState,
   saveLaneTodoFile,
 } from "./imperative-shell/lane-store.js";
+import {readTextFile, writeTextFile} from "./imperative-shell/json-files.js";
 import {serveDashboard} from "./imperative-shell/dashboard-server.js";
-import {getPortStatus} from "./imperative-shell/network.js";
 import {ensurePiExists, launchPi} from "./imperative-shell/pi-launch.js";
 import {hasSavedPiSessionForCwd} from "./imperative-shell/pi-session-discovery.js";
 import type {
@@ -75,11 +78,10 @@ type StartOptions = JsonOption & {
 };
 
 type NewLaneOptions = JsonOption & {
+  readonly id?: string;
   readonly title?: string;
-  readonly workspace?: string;
   readonly repo?: string;
   readonly bookmark?: string;
-  readonly port?: string | number;
   readonly sessionName?: string;
   readonly serverCommand?: string;
   readonly priority?: string;
@@ -141,13 +143,11 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
 
   program
     .command("new")
-    .argument("<laneId>")
     .description("Create a new lane")
-    .requiredOption("--title <title>", "Lane title")
-    .requiredOption("--workspace <workspace>", "Lane workspace path")
+    .requiredOption("--id <id>", "Lane id")
     .requiredOption("--repo <repo>", "Repository root path")
-    .requiredOption("--bookmark <bookmark>", "jj bookmark")
-    .requiredOption("--port <port>", "Dev server port")
+    .option("--title <title>", "Lane title")
+    .option("--bookmark <bookmark>", "jj bookmark")
     .option("--session-name <sessionName>", "pi session name")
     .option("--server-command <serverCommand>", "Dev server command")
     .option("--priority <priority>", "Lane priority")
@@ -155,8 +155,8 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
     .option("--notes <notes>", "Lane notes")
     .option("--tags <tags>", "Comma-separated tags")
     .option("--json", "Output JSON")
-    .action(async (laneId: string, options: NewLaneOptions) => {
-      await runWithHandling(() => runNewLaneCommand(laneId, createCommandContext(options), options));
+    .action(async (options: NewLaneOptions) => {
+      await runWithHandling(() => runNewLaneCommand(createCommandContext(options), options));
     });
 
   program
@@ -344,17 +344,14 @@ async function runWithHandling(action: () => Promise<number>): Promise<void> {
 
 async function runStartCommand(laneId: string, context: CommandContext, options: StartOptions): Promise<number> {
   const dryRun = options.dryRun === true;
-  const paths = getDefaultLanePaths(process.cwd());
-  if (!existsSync(paths.configPath)) {
-    throw new Error(`lane registry not found: ${paths.configPath}`);
-  }
-
+  const paths = getDefaultLanePaths();
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
-  await assertWorkspaceExists(lane.workspacePath);
+  await assertRepoExists(lane.repoPath);
 
   const todoFile = await loadLaneTodoFile(paths, lane.id);
   const existingRuntimeState = await loadLaneRuntimeState(paths, lane.id);
-  const runtimeState = createStartedRuntimeState({lane, existingRuntimeState, now: toIsoNow()});
+  const now = toIsoNow();
+  const runtimeState = createStartedRuntimeState({lane, existingRuntimeState, now});
 
   await saveLaneRuntimeState(paths, runtimeState);
 
@@ -374,23 +371,26 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
   }
 
   await ensurePiExists();
-  const continueSession = await hasSavedPiSessionForCwd(lane.workspacePath);
+  const continueSession = await hasSavedPiSessionForCwd(lane.repoPath);
+  const laneContext = await readLaneContext(paths, lane.id);
   const initialMessages = continueSession
     ? []
-    : [`/name ${lane.sessionName}`, formatLaneStartupPrompt({lane, runtimeState, todoFile})];
+    : [`/name ${lane.sessionName}`, formatLaneStartupPrompt({lane, runtimeState, todoFile, laneContext})];
+  const toolRoot = getToolRoot();
   const exitCode = await launchPi({
-    cwd: lane.workspacePath,
+    cwd: lane.repoPath,
     continueSession,
     initialMessages,
-    extensionPaths: [resolve(paths.rootPath, "extensions/lane-bridge.ts")],
+    extensionPaths: [resolve(toolRoot, "extensions/lane-bridge.ts")],
     skillPaths: [
-      resolve(paths.rootPath, "skills/lane-context/SKILL.md"),
-      resolve(paths.rootPath, "skills/lane-todo-hygiene/SKILL.md"),
-      resolve(paths.rootPath, "skills/lane-status-summary/SKILL.md"),
+      resolve(toolRoot, "skills/lane-context/SKILL.md"),
+      resolve(toolRoot, "skills/lane-todo-hygiene/SKILL.md"),
+      resolve(toolRoot, "skills/lane-status-summary/SKILL.md"),
     ],
     environment: {
       ...process.env,
-      PI_LANES_ROOT: paths.rootPath,
+      PI_LANES_HOME: paths.rootPath,
+      PI_LANE_ID: lane.id,
     },
   });
   await saveLaneRuntimeState(paths, createStoppedRuntimeState(runtimeState, toIsoNow()));
@@ -398,7 +398,7 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
 }
 
 async function runDashboardSnapshotCommand(context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   const lanes = await loadLaneRegistry(paths);
   const snapshot = await Promise.all(
     lanes.map(async lane => {
@@ -420,14 +420,14 @@ async function runDashboardSnapshotCommand(context: CommandContext): Promise<num
 
 async function runDashboardServeCommand(options: DashboardServeOptions): Promise<number> {
   const port = options.port === undefined ? 4310 : parsePortOption(options.port);
-  await serveDashboard({rootPath: process.cwd(), port});
+  await serveDashboard({configRootPath: getDefaultLanePaths().rootPath, toolRootPath: getToolRoot(), port});
   return await new Promise<number>(() => {
     // Keep process alive until terminated.
   });
 }
 
 async function runDoctorCommand(context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   const lanes = await loadLaneRegistry(paths);
   let piAvailable = true;
 
@@ -441,23 +441,22 @@ async function runDoctorCommand(context: CommandContext): Promise<number> {
     lanes.map(async lane => {
       const todoPath = getLaneTodoPath(paths, lane.id);
       const runtimePath = getLaneRuntimePath(paths, lane.id);
-      const workspaceExists = existsSync(lane.workspacePath);
+      const contextPath = getLaneContextPath(paths, lane.id);
       const repoExists = existsSync(lane.repoPath);
       const todoFileExists = existsSync(todoPath);
       const runtimeFileExists = existsSync(runtimePath);
+      const contextFileExists = existsSync(contextPath);
       const todoFile = await loadLaneTodoFile(paths, lane.id);
       const runtimeState = await loadLaneRuntimeState(paths, lane.id);
-      const portStatus = await getPortStatus(lane.port);
 
       return buildDoctorLaneReport({
         lane,
-        workspaceExists,
         repoExists,
         todoFileExists,
         runtimeFileExists,
+        contextFileExists,
         todoFile,
         runtimeState,
-        portStatus,
       });
     }),
   );
@@ -469,14 +468,14 @@ async function runDoctorCommand(context: CommandContext): Promise<number> {
   }
 
   console.log(`pi available: ${report.piAvailable ? "yes" : "no"}`);
+  console.log(`lane home: ${paths.rootPath}`);
   console.log(`lanes: ${report.laneCount}`);
   for (const lane of report.lanes) {
     console.log(`\n${lane.laneId}`);
-    console.log(`  workspace: ${lane.workspaceExists ? "ok" : "missing"}`);
     console.log(`  repo: ${lane.repoExists ? "ok" : "missing"}`);
     console.log(`  todo file: ${lane.todoFileExists ? "ok" : "missing"}`);
     console.log(`  runtime file: ${lane.runtimeFileExists ? "ok" : "missing"}`);
-    console.log(`  port: ${lane.portStatus}`);
+    console.log(`  context file: ${lane.contextFileExists ? "ok" : "missing"}`);
     if (lane.issues.length > 0) {
       for (const issue of lane.issues) {
         console.log(`  issue: ${issue}`);
@@ -496,38 +495,29 @@ async function runDoctorCommand(context: CommandContext): Promise<number> {
   return report.ok ? 0 : 1;
 }
 
-async function runNewLaneCommand(laneId: string, context: CommandContext, options: NewLaneOptions): Promise<number> {
-  if (!options.title) {
-    throw new Error("missing required flag: --title");
-  }
-  if (!options.workspace) {
-    throw new Error("missing required flag: --workspace");
+async function runNewLaneCommand(context: CommandContext, options: NewLaneOptions): Promise<number> {
+  if (!options.id) {
+    throw new Error("missing required flag: --id");
   }
   if (!options.repo) {
     throw new Error("missing required flag: --repo");
   }
-  if (!options.bookmark) {
-    throw new Error("missing required flag: --bookmark");
-  }
-  if (options.port === undefined) {
-    throw new Error("missing required flag: --port");
-  }
 
-  const paths = getDefaultLanePaths(process.cwd());
+  const laneId = options.id;
+  const paths = getDefaultLanePaths();
+  await ensureLaneHome(paths);
   const lanes = await loadLaneRegistry(paths);
+  const title = options.title ?? laneId;
   const sessionName = options.sessionName ?? laneId;
   const priority = options.priority === undefined ? null : parseLanePriority(options.priority);
   const status = options.status === undefined ? "active" : parseLaneStatus(options.status);
-  const port = parsePortOption(options.port ?? "");
   const tags = parseTagsOption(options.tags);
 
   const result = createLane(lanes, {
     id: laneId,
-    title: options.title,
-    workspacePath: options.workspace,
+    title,
     repoPath: options.repo,
-    jjBookmark: options.bookmark,
-    port,
+    jjBookmark: options.bookmark ?? null,
     sessionName,
     serverCommand: options.serverCommand ?? null,
     priority,
@@ -555,6 +545,7 @@ async function runNewLaneCommand(laneId: string, context: CommandContext, option
       now,
     ),
   );
+  await ensureLaneContextExists(paths, createdLane);
   if (context.outputMode === "json") {
     printJson({ok: true, action: "lane.new", lane: createdLane});
   } else {
@@ -564,7 +555,7 @@ async function runNewLaneCommand(laneId: string, context: CommandContext, option
 }
 
 async function runListCommand(context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   const lanes = await loadLaneRegistry(paths);
   const summaries = await Promise.all(
     lanes.map(async lane => {
@@ -580,14 +571,14 @@ async function runListCommand(context: CommandContext): Promise<number> {
   }
 
   for (const summary of summaries) {
-    console.log(`${summary.id}  ${summary.stateLabel}  port=${summary.port}  open=${summary.todoCounts.open}  proposed=${summary.todoCounts.proposed}`);
+    console.log(`${summary.id}  ${summary.stateLabel}  open=${summary.todoCounts.open}  proposed=${summary.todoCounts.proposed}`);
   }
 
   return 0;
 }
 
 async function runShowCommand(laneId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, lane.id);
   const runtimeState = await loadLaneRuntimeState(paths, lane.id);
@@ -610,7 +601,7 @@ async function runShowCommand(laneId: string, context: CommandContext): Promise<
 }
 
 async function runTodoListCommand(laneId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
 
@@ -637,7 +628,7 @@ async function runTodoAddCommand(laneId: string, context: CommandContext, option
 
   const priority = parseTodoPriority(options.priority ?? "medium");
   const notes = options.notes ?? null;
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, lane.id);
   const now = toIsoNow();
@@ -657,7 +648,7 @@ async function runTodoAddCommand(laneId: string, context: CommandContext, option
 }
 
 async function runTodoApproveCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
   const result = approveProposedTodo(todoFile, todoId, toIsoNow());
@@ -676,7 +667,7 @@ async function runTodoApproveCommand(laneId: string, todoId: string, context: Co
 }
 
 async function runTodoRejectCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
   const result = rejectProposedTodo(todoFile, todoId, toIsoNow());
@@ -696,7 +687,7 @@ async function runTodoRejectCommand(laneId: string, todoId: string, context: Com
 
 async function runTodoEditCommand(laneId: string, todoId: string, context: CommandContext, options: TodoEditOptions): Promise<number> {
   const priority = options.priority === undefined ? null : parseTodoPriority(options.priority);
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
   const result = editTodo(todoFile, todoId, {title: options.title ?? null, notes: options.notes ?? null, priority}, toIsoNow());
@@ -715,7 +706,7 @@ async function runTodoEditCommand(laneId: string, todoId: string, context: Comma
 }
 
 async function runTodoDeleteCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
   const deletedTodo = mustFindTodo(todoFile, todoId);
@@ -735,7 +726,7 @@ async function runTodoDeleteCommand(laneId: string, todoId: string, context: Com
 
 async function runTodoSetStatusCommand(laneId: string, todoId: string, statusValue: string, context: CommandContext): Promise<number> {
   const status = parseTodoStatus(statusValue);
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   getLaneById(await loadLaneRegistry(paths), laneId);
   const todoFile = await loadLaneTodoFile(paths, laneId);
   const result = setTodoStatus(todoFile, todoId, status, toIsoNow());
@@ -829,7 +820,7 @@ async function loadRuntimeCommandState(laneId: string): Promise<{
   readonly runtimeState: LaneRuntimeState;
   readonly todoFile: LaneTodoFile;
 }> {
-  const paths = getDefaultLanePaths(process.cwd());
+  const paths = getDefaultLanePaths();
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
   const now = toIsoNow();
   const runtimeState =
@@ -857,9 +848,8 @@ function buildLaneSummary(lane: Lane, runtimeState: LaneRuntimeState | null, tod
   return {
     id: lane.id,
     title: lane.title,
-    port: lane.port,
+    repoPath: lane.repoPath,
     sessionName: lane.sessionName,
-    workspacePath: lane.workspacePath,
     jjBookmark: lane.jjBookmark,
     isActive: runtimeState?.isActive ?? false,
     stateLabel: runtimeState?.isActive ? runtimeState.mode : "cold",
@@ -979,6 +969,28 @@ function parseLaneStatus(input: string): LaneStatus {
     throw new Error(`invalid lane status: ${input}`);
   }
   return input as LaneStatus;
+}
+
+async function ensureLaneContextExists(paths: ReturnType<typeof getDefaultLanePaths>, lane: Lane): Promise<void> {
+  const contextPath = getLaneContextPath(paths, lane.id);
+  if (existsSync(contextPath)) {
+    return;
+  }
+  const template = `# ${lane.id}\n\nPurpose:\n- Describe what this lane is for.\n\nConstraints:\n- Add lane-specific rules, references, or reminders here.\n\nReferences:\n- Add useful links, files, or commands.\n`;
+  await writeTextFile(contextPath, template);
+}
+
+async function readLaneContext(paths: ReturnType<typeof getDefaultLanePaths>, laneId: string): Promise<string | null> {
+  const contextPath = getLaneContextPath(paths, laneId);
+  if (!existsSync(contextPath)) {
+    return null;
+  }
+  const text = await readTextFile(contextPath);
+  return text.trim().length > 0 ? text : null;
+}
+
+function getToolRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "..");
 }
 
 function parsePortOption(input: string | number): number {

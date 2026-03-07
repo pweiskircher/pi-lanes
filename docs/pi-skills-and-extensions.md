@@ -86,7 +86,7 @@ This repo now includes:
 - `.pi/settings.json`
 
 The extension is still intentionally small, but it now provides:
-- automatic lane session naming on session start when it can match the workspace
+- automatic lane session naming on session start when it can match the current lane id or repo
 - `/lane-status`
 - `/lane-todos`
 - `/lane-set-summary`

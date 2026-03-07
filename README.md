@@ -23,9 +23,9 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 
 ## Repo layout
 
-- `config/` — lane registry
-- `state/runtime/` — per-lane runtime state files
-- `state/todos/` — per-lane TODO files
+This repo contains the tooling implementation. Actual lane data now lives by default in `~/.config/pi-lanes/`.
+
+Repo contents:
 - `docs/design-plans/pi-lanes-v1.md` — V1 design
 - `docs/plans/pi-lanes-v1-implementation.md` — staged implementation plan
 - `docs/pi-skills-and-extensions.md` — proposed pi customizations
@@ -39,7 +39,7 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 
 ## Core model
 
-- **Lane**: a durable unit of work with workspace, session name, port, and TODOs.
+- **Lane**: a durable unit of work with repo, session name, lane context, and TODOs.
 - **Hot lane**: a lane currently running in a terminal.
 - **Cold lane**: a lane with saved state but no live terminal session.
 - **TODO**: a lane-scoped work item.
@@ -48,7 +48,7 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 ## Current implementation status
 
 Implemented now:
-- `pi-lane new <lane-id> ... [--json]`
+- `pi-lane new --id <lane-id> --repo <path> ... [--json]`
 - `pi-lane doctor [--json]`
 - `pi-lane-start <lane-id>` via `bin/pi-lane-start.mjs`
 - `pi-lane list [--json]`
@@ -70,9 +70,9 @@ Implemented now:
 - `pi-lane runtime set-mode <lane-id> <mode> [--json]`
 - `pi-lane runtime set-last-human-instruction <lane-id> --text ... [--json]`
 - runtime state file updates on lane start and stop
-- doctor checks for lane config, paths, TODO/runtime files, pi availability, and port usage
+- doctor checks for lane config, repo paths, TODO/runtime files, lane context files, and pi availability
 - validation and tests for TODO transitions, runtime state, and lane creation
-- CLI parsing now uses `cac` instead of hand-rolled flag parsing
+- CLI parsing now uses `commander` instead of hand-rolled flag parsing
 - starter pi skills for lane context, TODO hygiene, and compact lane summaries
 - project-local pi settings and AGENTS notes for this repo
 - `pi-lane-start` now injects the lane extension and skills into pi sessions
@@ -82,22 +82,23 @@ Implemented now:
 1. Install dependencies:
    - `npm install`
 2. Create a lane:
-   - `node bin/pi-lane.mjs new mt-core --title 'Multithreading large subsystem' --workspace /path/to/workspaces/mt-core --repo /path/to/repo --bookmark pat/mt-core --port 3001`
-3. Create any real lane workspaces you reference.
-4. Run a health check:
+   - `node bin/pi-lane.mjs new --id mt-core --repo /path/to/repo --title 'Multithreading large subsystem' --bookmark pat/mt-core`
+3. Lane data is stored in `~/.config/pi-lanes/` by default.
+4. Each lane also gets a context file at `~/.config/pi-lanes/context/<lane-id>.md` for lane-specific notes and instructions.
+5. Run a health check:
    - `node bin/pi-lane.mjs doctor`
-5. Start a lane:
+6. Start a lane:
    - `node bin/pi-lane-start.mjs <lane-id>`
-6. Inspect lanes:
+7. Inspect lanes:
    - `node bin/pi-lane.mjs list`
    - `node bin/pi-lane.mjs show <lane-id>`
-7. For dashboard-friendly output, use JSON mode:
+8. For dashboard-friendly output, use JSON mode:
    - `node bin/pi-lane.mjs list --json`
    - `node bin/pi-lane.mjs show <lane-id> --json`
    - `node bin/pi-lane.mjs dashboard snapshot --json`
    - `node bin/pi-lane.mjs todo list <lane-id> --json`
    - `node bin/pi-lane.mjs doctor --json`
-8. Run the local dashboard:
+9. Run the local dashboard:
    - `node bin/pi-lane.mjs dashboard serve --port 4310`
 
 The dashboard currently supports:
@@ -106,6 +107,11 @@ The dashboard currently supports:
 - TODO approve/reject
 - TODO status changes
 - runtime summary / needs-input / current-TODO / mode editing
+
+Lane-specific context works like a lightweight per-lane AGENTS-style note:
+- `~/.config/pi-lanes/context/<lane-id>.md`
+- `pi-lane new` creates it automatically
+- `pi-lane-start` loads it into the startup prompt for fresh sessions
 
 ## Included pi workflow scaffolding
 

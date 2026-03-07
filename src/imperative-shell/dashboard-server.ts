@@ -5,6 +5,7 @@ import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
 import {setRuntimeCurrentTodo, setRuntimeLastHumanInstruction, setRuntimeMode, setRuntimeNeedsInput, setRuntimeSummary} from "../functional-core/runtime-state.js";
 import {approveProposedTodo, createHumanTodo, deleteTodo, editTodo, rejectProposedTodo, setTodoStatus} from "../functional-core/todo-transitions.js";
+import {createStartedRuntimeState, createStoppedRuntimeState} from "../functional-core/runtime-state.js";
 import {
   getDefaultLanePaths,
   getLaneById,
@@ -14,14 +15,14 @@ import {
   saveLaneRuntimeState,
   saveLaneTodoFile,
 } from "./lane-store.js";
-import type {LaneTodo, TodoPriority, TodoStatus} from "../types.js";
+import type {Lane, LaneTodo, TodoPriority, TodoStatus} from "../types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
 const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
 
-export async function serveDashboard(options: {readonly rootPath: string; readonly port: number}): Promise<void> {
-  const paths = getDefaultLanePaths(options.rootPath);
-  const htmlPath = resolve(options.rootPath, "dashboard/index.html");
+export async function serveDashboard(options: {readonly configRootPath: string; readonly toolRootPath: string; readonly port: number}): Promise<void> {
+  const paths = getDefaultLanePaths(options.configRootPath);
+  const htmlPath = resolve(options.toolRootPath, "dashboard/index.html");
 
   const server = createServer(async (request, response) => {
     try {
@@ -67,16 +68,12 @@ export async function serveDashboard(options: {readonly rootPath: string; readon
         }
         if (Object.hasOwn(body, "mode")) {
           const modeResult = setRuntimeMode(runtimeState, readRequiredString(body, "mode"), now);
-          if (!modeResult.success) {
-            throw new Error(modeResult.issues.map(issue => issue.message).join("; "));
-          }
+          if (!modeResult.success) throw new Error(modeResult.issues.map(issue => issue.message).join("; "));
           runtimeState = modeResult.data;
         }
         if (Object.hasOwn(body, "currentTodoId")) {
           const currentTodoResult = setRuntimeCurrentTodo(runtimeState, todoFile, readNullableString(body, "currentTodoId"), now);
-          if (!currentTodoResult.success) {
-            throw new Error(currentTodoResult.issues.map(issue => issue.message).join("; "));
-          }
+          if (!currentTodoResult.success) throw new Error(currentTodoResult.issues.map(issue => issue.message).join("; "));
           runtimeState = currentTodoResult.data;
         }
 
@@ -101,9 +98,7 @@ export async function serveDashboard(options: {readonly rootPath: string; readon
           notes,
           now,
         });
-        if (!result.success) {
-          throw new Error(result.issues.map(issue => issue.message).join("; "));
-        }
+        if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
         await saveLaneTodoFile(paths, result.data);
         sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
         return;
@@ -115,19 +110,12 @@ export async function serveDashboard(options: {readonly rootPath: string; readon
         const todoId = todoMatch[2] ?? "";
         const body = await readJsonBody(request);
         const todoFile = await loadLaneTodoFile(paths, laneId);
-        const result = editTodo(
-          todoFile,
-          todoId,
-          {
-            title: readOptionalString(body, "title"),
-            notes: readOptionalString(body, "notes"),
-            priority: body.priority === undefined ? null : parseTodoPriority(body.priority),
-          },
-          new Date().toISOString(),
-        );
-        if (!result.success) {
-          throw new Error(result.issues.map(issue => issue.message).join("; "));
-        }
+        const result = editTodo(todoFile, todoId, {
+          title: readOptionalString(body, "title"),
+          notes: readOptionalString(body, "notes"),
+          priority: body.priority === undefined ? null : parseTodoPriority(body.priority),
+        }, new Date().toISOString());
+        if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
         await saveLaneTodoFile(paths, result.data);
         sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
         return;
@@ -138,9 +126,7 @@ export async function serveDashboard(options: {readonly rootPath: string; readon
         const todoId = todoMatch[2] ?? "";
         const todoFile = await loadLaneTodoFile(paths, laneId);
         const result = deleteTodo(todoFile, todoId);
-        if (!result.success) {
-          throw new Error(result.issues.map(issue => issue.message).join("; "));
-        }
+        if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
         await saveLaneTodoFile(paths, result.data);
         sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
         return;
@@ -153,17 +139,13 @@ export async function serveDashboard(options: {readonly rootPath: string; readon
         const action = actionMatch[3] ?? "";
         const todoFile = await loadLaneTodoFile(paths, laneId);
         const now = new Date().toISOString();
-
         const result =
           action === "approve"
             ? approveProposedTodo(todoFile, todoId, now)
             : action === "reject"
               ? rejectProposedTodo(todoFile, todoId, now)
               : setTodoStatus(todoFile, todoId, parseTodoStatus((await readJsonBody(request)).status), now);
-
-        if (!result.success) {
-          throw new Error(result.issues.map(issue => issue.message).join("; "));
-        }
+        if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
         await saveLaneTodoFile(paths, result.data);
         sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
         return;
@@ -224,31 +206,16 @@ function groupTodos(todos: ReadonlyArray<LaneTodo>) {
   };
 }
 
-function createDefaultRuntimeState(lane: {readonly id: string; readonly sessionName: string; readonly workspacePath: string; readonly port: number}) {
-  return {
-    laneId: lane.id,
-    isActive: false,
-    startedAt: null,
-    updatedAt: new Date().toISOString(),
-    sessionName: lane.sessionName,
-    sessionId: null,
-    workspacePath: lane.workspacePath,
-    port: lane.port,
-    mode: "stopped" as const,
-    currentTodoId: null,
-    currentSummary: null,
-    needsInput: null,
-    lastHumanInstruction: null,
-  };
+function createDefaultRuntimeState(lane: Lane) {
+  const now = new Date().toISOString();
+  return createStoppedRuntimeState(createStartedRuntimeState({lane, existingRuntimeState: null, now}), now);
 }
 
 function createNextTodoId(existingTodos: ReadonlyArray<LaneTodo>): string {
   let highestValue = 0;
   for (const todo of existingTodos) {
     const numericPart = Number.parseInt(todo.id.replace("todo-", ""), 10);
-    if (Number.isNaN(numericPart)) {
-      continue;
-    }
+    if (Number.isNaN(numericPart)) continue;
     highestValue = Math.max(highestValue, numericPart);
   }
   return `todo-${String(highestValue + 1).padStart(3, "0")}`;
@@ -259,9 +226,7 @@ async function readJsonBody(request: IncomingMessage): Promise<Record<string, un
   for await (const chunk of request) {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   }
-  if (chunks.length === 0) {
-    return {};
-  }
+  if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
 }
 
@@ -275,30 +240,20 @@ function readRequiredString(body: Record<string, unknown>, key: string): string 
 
 function readOptionalString(body: Record<string, unknown>, key: string): string | null {
   const value = body[key];
-  if (value === undefined || value === null) {
-    return null;
-  }
-  if (typeof value !== "string") {
-    throw new Error(`invalid field: ${key}`);
-  }
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new Error(`invalid field: ${key}`);
   return value;
 }
 
 function readNullableString(body: Record<string, unknown>, key: string): string | null {
   const value = body[key];
-  if (value === undefined || value === null) {
-    return null;
-  }
-  if (typeof value !== "string") {
-    throw new Error(`invalid field: ${key}`);
-  }
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new Error(`invalid field: ${key}`);
   return value;
 }
 
 function parseTodoPriority(input: unknown): TodoPriority {
-  if (typeof input !== "string" || !todoPriorities.has(input as TodoPriority)) {
-    return "medium";
-  }
+  if (typeof input !== "string" || !todoPriorities.has(input as TodoPriority)) return "medium";
   return input as TodoPriority;
 }
 
