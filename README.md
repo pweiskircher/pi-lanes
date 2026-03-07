@@ -46,14 +46,15 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 
 Implemented now:
 - `pi-lane-start <lane-id>` via `bin/pi-lane-start.mjs`
-- `pi-lane list`
-- `pi-lane show <lane-id>`
-- `pi-lane todo add <lane-id> --title ...`
-- `pi-lane todo edit <lane-id> <todo-id> ...`
-- `pi-lane todo delete <lane-id> <todo-id>`
-- `pi-lane todo set-status <lane-id> <todo-id> <status>`
-- `pi-lane todo approve <lane-id> <todo-id>`
-- `pi-lane todo reject <lane-id> <todo-id>`
+- `pi-lane list [--json]`
+- `pi-lane show <lane-id> [--json]`
+- `pi-lane todo list <lane-id> [--json]`
+- `pi-lane todo add <lane-id> --title ... [--json]`
+- `pi-lane todo edit <lane-id> <todo-id> ... [--json]`
+- `pi-lane todo delete <lane-id> <todo-id> [--json]`
+- `pi-lane todo set-status <lane-id> <todo-id> <status> [--json]`
+- `pi-lane todo approve <lane-id> <todo-id> [--json]`
+- `pi-lane todo reject <lane-id> <todo-id> [--json]`
 - runtime state file updates on lane start and stop
 - validation and tests for TODO transitions
 
@@ -68,6 +69,10 @@ Implemented now:
 5. Inspect lanes:
    - `node bin/pi-lane.mjs list`
    - `node bin/pi-lane.mjs show <lane-id>`
+6. For dashboard-friendly output, use JSON mode:
+   - `node bin/pi-lane.mjs list --json`
+   - `node bin/pi-lane.mjs show <lane-id> --json`
+   - `node bin/pi-lane.mjs todo list <lane-id> --json`
 
 ## Next step
 
