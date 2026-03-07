@@ -28,9 +28,6 @@
       .status-busy { color: #f59e0b; }
       .status-open { color: #93c5fd; }
       .event { border-top: 1px solid #374151; padding: 8px 0; }
-      .field-label { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; }
-      .field-value { margin-top: 4px; white-space: pre-wrap; }
-      details summary { cursor: pointer; font-weight: 600; }
       .status-in_progress { color: #a78bfa; }
       .status-blocked { color: #f87171; }
       .status-done { color: #34d399; }
@@ -122,55 +119,6 @@
               <div class="panel"><strong>Health</strong><div>${detail.liveSessionHealth?.ok ? (detail.liveSessionHealth.isIdle ? 'idle' : 'busy') : 'offline'}</div></div>
               <div class="panel"><strong>Last activity</strong><div>${escapeHtml(formatTimestamp(detail.liveSessionHealth?.lastActivityAt))}</div></div>
             </div>
-          </div>
-
-          <div class="panel">
-            <h3>Lane status</h3>
-            <div class="muted">This is the lane's lightweight status note for phone review. You usually only update it when you want to record progress, note a blocker, or capture what input is needed.</div>
-            <div class="grid" style="margin-top:12px;">
-              <div>
-                <div class="field-label">Mode</div>
-                <div class="field-value">${escapeHtml(runtime.mode || 'stopped')}</div>
-              </div>
-              <div>
-                <div class="field-label">Current TODO</div>
-                <div class="field-value">${escapeHtml(runtime.currentTodoId || '—')}</div>
-              </div>
-              <div>
-                <div class="field-label">Summary</div>
-                <div class="field-value">${escapeHtml(runtime.currentSummary || 'No summary yet.')}</div>
-              </div>
-              <div>
-                <div class="field-label">Needs input</div>
-                <div class="field-value">${escapeHtml(runtime.needsInput || 'Nothing requested.')}</div>
-              </div>
-              <div>
-                <div class="field-label">Last human instruction</div>
-                <div class="field-value">${escapeHtml(runtime.lastHumanInstruction || 'Nothing recorded.')}</div>
-              </div>
-            </div>
-            <details style="margin-top:12px;">
-              <summary>Update lane status</summary>
-              <div class="muted" style="margin-top:8px;">Optional. Use this when you want the dashboard to show a concise progress note or a question for the human.</div>
-              <div class="row" style="margin-top:12px;">
-                <select id="runtimeMode">
-                  ${['idle','interactive','working','waiting_for_input','blocked','stopped'].map(mode => `<option value="${mode}" ${runtime.mode === mode ? 'selected' : ''}>${mode}</option>`).join('')}
-                </select>
-                <select id="runtimeCurrentTodo">
-                  <option value="">— no current TODO —</option>
-                  ${detail.todos.filter(todo => todo.status !== 'proposed').map(todo => `<option value="${todo.id}" ${runtime.currentTodoId === todo.id ? 'selected' : ''}>${todo.id} — ${escapeHtml(todo.title)}</option>`).join('')}
-                </select>
-              </div>
-              <div style="margin-top:8px;"><strong>Summary</strong></div>
-              <textarea id="runtimeSummary" placeholder="Short progress update, e.g. 'Compared 2 approaches; heuristic B looks better.'">${escapeHtml(runtime.currentSummary || '')}</textarea>
-              <div style="margin-top:8px;"><strong>Needs input</strong></div>
-              <textarea id="runtimeNeedsInput" placeholder="Question for the human, if blocked on a decision.">${escapeHtml(runtime.needsInput || '')}</textarea>
-              <div style="margin-top:8px;"><strong>Last human instruction</strong></div>
-              <textarea id="runtimeLastHumanInstruction" placeholder="Optional note of the latest explicit human instruction.">${escapeHtml(runtime.lastHumanInstruction || '')}</textarea>
-              <div class="row">
-                <button onclick="saveRuntime()">Save lane status</button>
-              </div>
-            </details>
           </div>
 
           <div class="panel">
@@ -299,22 +247,6 @@
           }),
         });
         document.getElementById('laneMessageText').value = '';
-        await refresh();
-        await loadLane(selectedLaneId);
-      }
-
-      async function saveRuntime() {
-        await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/runtime`, {
-          method: 'PATCH',
-          headers: {'content-type': 'application/json'},
-          body: JSON.stringify({
-            mode: document.getElementById('runtimeMode').value,
-            currentTodoId: document.getElementById('runtimeCurrentTodo').value || null,
-            currentSummary: document.getElementById('runtimeSummary').value,
-            needsInput: document.getElementById('runtimeNeedsInput').value,
-            lastHumanInstruction: document.getElementById('runtimeLastHumanInstruction').value,
-          }),
-        });
         await refresh();
         await loadLane(selectedLaneId);
       }

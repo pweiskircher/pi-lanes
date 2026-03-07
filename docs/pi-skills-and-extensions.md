@@ -97,10 +97,6 @@ The extension is still intentionally small, but it now provides:
 
 The dashboard now complements those commands with HTTP-based editing for:
 - lane context
-- runtime summary
-- needs-input state
-- current TODO
-- runtime mode
 - lane TODO CRUD and review actions
 - live message delivery into active lane sessions
 - live idle/busy session health

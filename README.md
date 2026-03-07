@@ -112,7 +112,6 @@ The dashboard currently supports:
 - TODO add/edit/delete
 - TODO approve/reject
 - TODO status changes
-- runtime summary / needs-input / current-TODO / mode editing
 
 Lane-specific context works like a lightweight per-lane AGENTS-style note:
 - `~/.config/pi-lanes/context/<lane-id>.md`
