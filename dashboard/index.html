@@ -62,6 +62,7 @@
       const SELECTED_LANE_STORAGE_KEY = 'pi-lanes.selected-lane-id';
       let selectedLaneId = loadSelectedLaneId();
       let snapshot = [];
+      let selectedLaneUiState = createDefaultLaneUiState();
 
       document.getElementById('refreshButton').addEventListener('click', refresh);
       setInterval(() => {
@@ -69,6 +70,7 @@
       }, 10000);
 
       async function refresh() {
+        captureLaneUiState();
         const response = await fetch('/api/snapshot');
         const data = await response.json();
         snapshot = data.lanes;
@@ -76,6 +78,7 @@
         if (selectedLaneId && !snapshot.some(lane => lane.lane.id === selectedLaneId)) {
           selectedLaneId = null;
           saveSelectedLaneId(null);
+          selectedLaneUiState = createDefaultLaneUiState();
         }
 
         renderLaneList();
@@ -106,12 +109,16 @@
       }
 
       async function loadLane(laneId) {
+        if (selectedLaneId !== laneId) {
+          selectedLaneUiState = createDefaultLaneUiState();
+        }
         selectedLaneId = laneId;
         saveSelectedLaneId(laneId);
         renderLaneList();
         const response = await fetch(`/api/lanes/${encodeURIComponent(laneId)}`);
         const data = await response.json();
         renderLaneDetail(data.lane);
+        restoreLaneUiState();
         scrollConversationToBottom();
       }
 
@@ -162,7 +169,7 @@
           </div>
 
           <div class="panel">
-            <details>
+            <details id="laneSettingsDetails">
               <summary>Lane settings</summary>
               <div class="muted" style="margin-top:8px;">Lane-specific notes and configuration helpers.</div>
               <div style="margin-top:12px;">
@@ -176,7 +183,7 @@
           </div>
 
           <div class="panel">
-            <details>
+            <details id="laneEventsDetails">
               <summary>Recent events</summary>
               <div style="margin-top:12px;">
                 ${(detail.recentEvents || []).length > 0 ? detail.recentEvents.map(renderEvent).join('') : '<div class="muted">No recent events.</div>'}
@@ -275,6 +282,7 @@
       }
 
       async function saveContext() {
+        captureLaneUiState();
         await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/context`, {
           method: 'PATCH',
           headers: {'content-type': 'application/json'},
@@ -287,6 +295,7 @@
       }
 
       async function sendLaneMessage() {
+        captureLaneUiState();
         await api(`/api/lanes/${encodeURIComponent(selectedLaneId)}/message`, {
           method: 'POST',
           headers: {'content-type': 'application/json'},
@@ -295,7 +304,7 @@
             deliverAs: document.getElementById('messageDeliveryMode').value,
           }),
         });
-        document.getElementById('laneMessageText').value = '';
+        selectedLaneUiState.messageText = '';
         await refresh();
         await loadLane(selectedLaneId);
         scrollConversationToBottom();
@@ -355,6 +364,39 @@
       function shortRepo(value) {
         const parts = String(value).split('/').filter(Boolean);
         return parts.slice(-2).join('/') || value;
+      }
+
+      function createDefaultLaneUiState() {
+        return {
+          messageText: '',
+          messageDeliveryMode: 'steer',
+          contextText: '',
+          settingsOpen: false,
+          eventsOpen: false,
+        };
+      }
+
+      function captureLaneUiState() {
+        selectedLaneUiState = {
+          messageText: document.getElementById('laneMessageText')?.value || '',
+          messageDeliveryMode: document.getElementById('messageDeliveryMode')?.value || 'steer',
+          contextText: document.getElementById('laneContextText')?.value || '',
+          settingsOpen: document.getElementById('laneSettingsDetails')?.open === true,
+          eventsOpen: document.getElementById('laneEventsDetails')?.open === true,
+        };
+      }
+
+      function restoreLaneUiState() {
+        const messageText = document.getElementById('laneMessageText');
+        if (messageText) messageText.value = selectedLaneUiState.messageText;
+        const messageDeliveryMode = document.getElementById('messageDeliveryMode');
+        if (messageDeliveryMode) messageDeliveryMode.value = selectedLaneUiState.messageDeliveryMode;
+        const contextText = document.getElementById('laneContextText');
+        if (contextText) contextText.value = selectedLaneUiState.contextText || contextText.value;
+        const settingsDetails = document.getElementById('laneSettingsDetails');
+        if (settingsDetails) settingsDetails.open = selectedLaneUiState.settingsOpen;
+        const eventsDetails = document.getElementById('laneEventsDetails');
+        if (eventsDetails) eventsDetails.open = selectedLaneUiState.eventsOpen;
       }
 
       function scrollConversationToBottom() {
