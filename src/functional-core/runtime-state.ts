@@ -21,9 +21,6 @@ export function createStartedRuntimeState(options: {
     repoPath: lane.repoPath,
     mode: "interactive",
     currentTodoId: existingRuntimeState?.currentTodoId ?? null,
-    currentSummary: existingRuntimeState?.currentSummary ?? null,
-    needsInput: existingRuntimeState?.needsInput ?? null,
-    lastHumanInstruction: existingRuntimeState?.lastHumanInstruction ?? null,
     messageBridge: existingRuntimeState?.messageBridge ?? null,
   };
 }
@@ -35,22 +32,6 @@ export function createStoppedRuntimeState(runtimeState: LaneRuntimeState, now: s
     updatedAt: now,
     mode: "stopped",
     messageBridge: null,
-  };
-}
-
-export function setRuntimeSummary(runtimeState: LaneRuntimeState, summary: string | null, now: string): LaneRuntimeState {
-  return {
-    ...runtimeState,
-    updatedAt: now,
-    currentSummary: normalizeNullableText(summary),
-  };
-}
-
-export function setRuntimeNeedsInput(runtimeState: LaneRuntimeState, needsInput: string | null, now: string): LaneRuntimeState {
-  return {
-    ...runtimeState,
-    updatedAt: now,
-    needsInput: normalizeNullableText(needsInput),
   };
 }
 
@@ -118,18 +99,6 @@ export function setRuntimeMode(
   };
 }
 
-export function setRuntimeLastHumanInstruction(
-  runtimeState: LaneRuntimeState,
-  instruction: string | null,
-  now: string,
-): LaneRuntimeState {
-  return {
-    ...runtimeState,
-    updatedAt: now,
-    lastHumanInstruction: normalizeNullableText(instruction),
-  };
-}
-
 export function setRuntimeMessageBridge(
   runtimeState: LaneRuntimeState,
   messageBridge: LaneRuntimeMessageBridge | null,
@@ -140,12 +109,4 @@ export function setRuntimeMessageBridge(
     updatedAt: now,
     messageBridge,
   };
-}
-
-function normalizeNullableText(value: string | null): string | null {
-  if (value === null) {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }

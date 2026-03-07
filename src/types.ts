@@ -81,9 +81,6 @@ export type LaneRuntimeState = {
   readonly repoPath: string;
   readonly mode: LaneRuntimeMode;
   readonly currentTodoId: string | null;
-  readonly currentSummary: string | null;
-  readonly needsInput: string | null;
-  readonly lastHumanInstruction: string | null;
   readonly messageBridge: LaneRuntimeMessageBridge | null;
 };
 

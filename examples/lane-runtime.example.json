@@ -8,9 +8,6 @@
   "repoPath": "/Users/pat/Work/project",
   "mode": "working",
   "currentTodoId": "todo-001",
-  "currentSummary": "Compared 2 tagged samples. Hybrid heuristic looks better on one malformed document.",
-  "needsInput": "Prefer visual consistency over strict tag fidelity when producers disagree?",
-  "lastHumanInstruction": "Start TODO todo-001 and stop if you need a design decision.",
   "messageBridge": {
     "port": 45123,
     "authToken": "example-bridge-token"

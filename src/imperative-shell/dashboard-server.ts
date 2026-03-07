@@ -8,10 +8,7 @@ import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
   setRuntimeCurrentTodo,
-  setRuntimeLastHumanInstruction,
   setRuntimeMode,
-  setRuntimeNeedsInput,
-  setRuntimeSummary,
 } from "../functional-core/runtime-state.js";
 import {
   getDefaultLanePaths,
@@ -65,15 +62,6 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
         let runtimeState = await loadOrCreateRuntimeState(paths, lane);
         const now = new Date().toISOString();
 
-        if (Object.hasOwn(body, "currentSummary")) {
-          runtimeState = setRuntimeSummary(runtimeState, readNullableString(body, "currentSummary"), now);
-        }
-        if (Object.hasOwn(body, "needsInput")) {
-          runtimeState = setRuntimeNeedsInput(runtimeState, readNullableString(body, "needsInput"), now);
-        }
-        if (Object.hasOwn(body, "lastHumanInstruction")) {
-          runtimeState = setRuntimeLastHumanInstruction(runtimeState, readNullableString(body, "lastHumanInstruction"), now);
-        }
         if (Object.hasOwn(body, "mode")) {
           const modeResult = setRuntimeMode(runtimeState, readRequiredString(body, "mode"), now);
           if (!modeResult.success) throw new Error(modeResult.issues.map(issue => issue.message).join("; "));
@@ -122,8 +110,6 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
           throw new Error(typeof bridgeJson.error === "string" ? bridgeJson.error : `bridge request failed: ${bridgeResponse.status}`);
         }
 
-        const updatedRuntimeState = setRuntimeLastHumanInstruction(runtimeState, message, new Date().toISOString());
-        await saveLaneRuntimeState(paths, updatedRuntimeState);
         sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId), delivery: bridgeJson});
         return;
       }

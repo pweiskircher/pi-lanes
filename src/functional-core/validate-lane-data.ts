@@ -29,7 +29,7 @@ const todoStatuses = new Set<TodoStatus>(["proposed", "open", "in_progress", "bl
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
 const todoCreators = new Set<TodoCreatedBy>(["human", "llm"]);
 const runtimeModes = new Set<LaneRuntimeMode>(["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]);
-const laneEventKinds = new Set<LaneEventKind>(["session_start", "session_shutdown", "agent_start", "agent_end", "turn_end", "input", "dashboard_message", "todo_proposed", "status"]);
+const laneEventKinds = new Set<LaneEventKind>(["session_start", "session_shutdown", "agent_start", "agent_end", "turn_end", "input", "dashboard_message", "todo_proposed"]);
 
 export function parseLaneRegistry(input: unknown): ValidationResult<LaneRegistry> {
   if (!Array.isArray(input)) {
@@ -105,9 +105,6 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
   const repoPath = readNonEmptyString(objectValue.repoPath, "$.repoPath", issues);
   const mode = readEnum(objectValue.mode, "$.mode", runtimeModes, issues);
   const currentTodoId = readOptionalTodoId(objectValue.currentTodoId, "$.currentTodoId", issues);
-  const currentSummary = readOptionalString(objectValue.currentSummary, "$.currentSummary", issues);
-  const needsInput = readOptionalString(objectValue.needsInput, "$.needsInput", issues);
-  const lastHumanInstruction = readOptionalString(objectValue.lastHumanInstruction, "$.lastHumanInstruction", issues);
   const messageBridge = readOptionalMessageBridge(objectValue.messageBridge, "$.messageBridge", issues);
 
   if (issues.length > 0 || laneId === null || isActive === null || updatedAt === null || sessionName === null || repoPath === null || mode === null) {
@@ -126,9 +123,6 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
       repoPath,
       mode,
       currentTodoId,
-      currentSummary,
-      needsInput,
-      lastHumanInstruction,
       messageBridge,
     },
   };

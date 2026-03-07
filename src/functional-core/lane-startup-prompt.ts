@@ -9,39 +9,36 @@ export function formatLaneStartupPrompt(options: {
   readonly laneContext: string | null;
 }): string {
   const {lane, runtimeState, todoFile, laneContext} = options;
-  const openTodos = todoFile.todos.filter(todo => todo.status === "open").map(todo => `- ${todo.id}: ${todo.title}`);
-  const proposedTodos = todoFile.todos.filter(todo => todo.status === "proposed").map(todo => `- ${todo.id}: ${todo.title}`);
-
   const lines = [
-    `You are working in lane ${lane.id}.`,
-    `Session name should be ${lane.sessionName}.`,
-    `Lane title: ${lane.title}`,
+    `You are resuming lane ${lane.id}.`,
+    `Title: ${lane.title}`,
     `Repository: ${lane.repoPath}`,
-    `JJ bookmark: ${lane.jjBookmark ?? "not set"}`,
-    "Rules:",
-    "- TODOs never auto-start.",
-    "- LLM-created proposed TODOs require review before normal work.",
-    "- Keep dashboard-visible summaries compact.",
+    `Session name: ${lane.sessionName}`,
+    `jj bookmark: ${lane.jjBookmark ?? "(none)"}`,
+    `Current mode: ${runtimeState.mode}`,
+    `Current TODO: ${runtimeState.currentTodoId ?? "(none)"}`,
   ];
 
+  const openTodos = todoFile.todos.filter(todo => todo.status === "open");
+  const proposedTodos = todoFile.todos.filter(todo => todo.status === "proposed");
+  lines.push(`Open TODO count: ${openTodos.length}`);
+  lines.push(`Proposed TODO count: ${proposedTodos.length}`);
+
   if (laneContext) {
-    lines.push("Lane context:", laneContext.trim());
+    lines.push("", "Lane context:", laneContext.trim());
   }
-  if (runtimeState.currentSummary) {
-    lines.push(`Latest summary: ${runtimeState.currentSummary}`);
+
+  if (todoFile.todos.length > 0) {
+    lines.push("", "TODOs:");
+    for (const todo of todoFile.todos) {
+      lines.push(`- ${todo.id} [${todo.status}] (${todo.priority}) ${todo.title}`);
+    }
   }
-  if (runtimeState.needsInput) {
-    lines.push(`Needs input: ${runtimeState.needsInput}`);
-  }
-  if (runtimeState.currentTodoId) {
-    lines.push(`Current TODO: ${runtimeState.currentTodoId}`);
-  }
-  if (openTodos.length > 0) {
-    lines.push("Open TODOs:", ...openTodos);
-  }
-  if (proposedTodos.length > 0) {
-    lines.push("Proposed TODOs awaiting review:", ...proposedTodos);
-  }
+
+  lines.push("", "Rules:");
+  lines.push("- TODOs do not auto-start.");
+  lines.push("- LLM-proposed TODOs remain proposed until human review.");
+  lines.push("- Keep lane updates grounded in actual TODOs and lane files.");
 
   return lines.join("\n");
 }

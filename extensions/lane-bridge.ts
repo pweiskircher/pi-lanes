@@ -7,10 +7,7 @@ import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
   setRuntimeCurrentTodo,
-  setRuntimeLastHumanInstruction,
   setRuntimeMessageBridge,
-  setRuntimeNeedsInput,
-  setRuntimeSummary,
 } from "../src/functional-core/runtime-state.js";
 import {
   getDefaultLanePaths,
@@ -103,8 +100,6 @@ export default function (pi: ExtensionAPI) {
         `Bookmark: ${lane.jjBookmark ?? "—"}`,
         `Open TODOs: ${todoFile.todos.filter(todo => todo.status === "open").length}`,
         `Proposed TODOs: ${todoFile.todos.filter(todo => todo.status === "proposed").length}`,
-        runtimeState.currentSummary ? `Summary: ${runtimeState.currentSummary}` : null,
-        runtimeState.needsInput ? `Needs input: ${runtimeState.needsInput}` : null,
         runtimeState.messageBridge ? `Dashboard bridge: 127.0.0.1:${runtimeState.messageBridge.port}` : null,
         liveSessionHealth?.laneId === lane.id ? `Health: ${liveSessionHealth.isIdle ? "idle" : "busy"}` : null,
       ].filter(Boolean).join("\n");
@@ -122,34 +117,6 @@ export default function (pi: ExtensionAPI) {
       }
       const todoFile = await loadLaneTodoFile(getLanePaths(), lane.id);
       pi.sendMessage({customType: "lane-todos", content: formatTodos(todoFile.todos), display: true, details: {laneId: lane.id}}, {triggerTurn: false});
-    },
-  });
-
-  pi.registerCommand("lane-set-summary", {
-    description: "Set the current lane runtime summary",
-    handler: async (args, ctx) => {
-      const lane = await findCurrentLane();
-      if (!lane) {
-        ctx.ui.notify("No lane matched the current session", "warning");
-        return;
-      }
-      const runtimeState = await loadOrCreateRuntimeState(lane);
-      await saveLaneRuntimeState(getLanePaths(), setRuntimeSummary(runtimeState, args.trim(), new Date().toISOString()));
-      ctx.ui.notify(`Updated lane summary for ${lane.id}`, "success");
-    },
-  });
-
-  pi.registerCommand("lane-set-needs-input", {
-    description: "Set the current lane needs-input text",
-    handler: async (args, ctx) => {
-      const lane = await findCurrentLane();
-      if (!lane) {
-        ctx.ui.notify("No lane matched the current session", "warning");
-        return;
-      }
-      const runtimeState = await loadOrCreateRuntimeState(lane);
-      await saveLaneRuntimeState(getLanePaths(), setRuntimeNeedsInput(runtimeState, args.trim(), new Date().toISOString()));
-      ctx.ui.notify(`Updated needs-input for ${lane.id}`, "success");
     },
   });
 
@@ -259,8 +226,6 @@ export default function (pi: ExtensionAPI) {
           piApi.sendUserMessage(message, {deliverAs});
           setLiveSessionHealth(lane.id, false, `dashboard ${deliverAs}: ${summarizeText(message, 120)}`);
           await appendLaneEvent(lane.id, "dashboard_message", `Dashboard ${deliverAs}: ${summarizeText(message, 120)}`, null);
-          const runtimeState = await loadOrCreateRuntimeState(lane);
-          await saveLaneRuntimeState(getLanePaths(), setRuntimeLastHumanInstruction(runtimeState, message, new Date().toISOString()));
           sendJson(response, 200, {ok: true, laneId: lane.id, deliverAs});
           return;
         }

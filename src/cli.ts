@@ -21,10 +21,7 @@ import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
   setRuntimeCurrentTodo,
-  setRuntimeLastHumanInstruction,
   setRuntimeMode,
-  setRuntimeNeedsInput,
-  setRuntimeSummary,
 } from "./functional-core/runtime-state.js";
 import {
   assertRepoExists,
@@ -101,10 +98,6 @@ type TodoEditOptions = JsonOption & {
   readonly title?: string;
   readonly priority?: string;
   readonly notes?: string;
-};
-
-type RuntimeTextOptions = JsonOption & {
-  readonly text?: string;
 };
 
 type ContextEditOptions = JsonOption & {
@@ -269,24 +262,6 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
       await runWithHandling(() => runRuntimeShowCommand(laneId, createCommandContext(options)));
     });
   runtime
-    .command("set-summary")
-    .argument("<laneId>")
-    .description("Set runtime summary")
-    .requiredOption("--text <text>", "Summary text")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, options: RuntimeTextOptions) => {
-      await runWithHandling(() => runRuntimeSetSummaryCommand(laneId, createCommandContext(options), options));
-    });
-  runtime
-    .command("set-needs-input")
-    .argument("<laneId>")
-    .description("Set needs-input text")
-    .requiredOption("--text <text>", "Needs-input text")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, options: RuntimeTextOptions) => {
-      await runWithHandling(() => runRuntimeSetNeedsInputCommand(laneId, createCommandContext(options), options));
-    });
-  runtime
     .command("set-current-todo")
     .argument("<laneId>")
     .argument("<todoId>")
@@ -312,16 +287,6 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
     .action(async (laneId: string, mode: string, options: JsonOption) => {
       await runWithHandling(() => runRuntimeSetModeCommand(laneId, mode, createCommandContext(options)));
     });
-  runtime
-    .command("set-last-human-instruction")
-    .argument("<laneId>")
-    .description("Set last human instruction")
-    .requiredOption("--text <text>", "Instruction text")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, options: RuntimeTextOptions) => {
-      await runWithHandling(() => runRuntimeSetLastHumanInstructionCommand(laneId, createCommandContext(options), options));
-    });
-
   const contextCommand = program.command("context").description("Lane context commands");
   contextCommand
     .command("show")
@@ -780,26 +745,6 @@ async function runRuntimeShowCommand(laneId: string, context: CommandContext): P
   return 0;
 }
 
-async function runRuntimeSetSummaryCommand(laneId: string, context: CommandContext, options: RuntimeTextOptions): Promise<number> {
-  if (options.text === undefined) {
-    throw new Error("missing required flag: --text");
-  }
-  const {paths, runtimeState} = await loadRuntimeCommandState(laneId);
-  const updated = setRuntimeSummary(runtimeState, options.text, toIsoNow());
-  await saveLaneRuntimeState(paths, updated);
-  return printRuntimeMutationResult(context, "runtime.set-summary", laneId, updated, `Updated summary for ${laneId}`);
-}
-
-async function runRuntimeSetNeedsInputCommand(laneId: string, context: CommandContext, options: RuntimeTextOptions): Promise<number> {
-  if (options.text === undefined) {
-    throw new Error("missing required flag: --text");
-  }
-  const {paths, runtimeState} = await loadRuntimeCommandState(laneId);
-  const updated = setRuntimeNeedsInput(runtimeState, options.text, toIsoNow());
-  await saveLaneRuntimeState(paths, updated);
-  return printRuntimeMutationResult(context, "runtime.set-needs-input", laneId, updated, `Updated needs-input text for ${laneId}`);
-}
-
 async function runRuntimeSetCurrentTodoCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
   const {paths, runtimeState, todoFile} = await loadRuntimeCommandState(laneId);
   const result = setRuntimeCurrentTodo(runtimeState, todoFile, todoId, toIsoNow());
@@ -829,16 +774,6 @@ async function runRuntimeSetModeCommand(laneId: string, mode: string, context: C
   }
   await saveLaneRuntimeState(paths, result.data);
   return printRuntimeMutationResult(context, "runtime.set-mode", laneId, result.data, `Set runtime mode for ${laneId} to ${parsedMode}`);
-}
-
-async function runRuntimeSetLastHumanInstructionCommand(laneId: string, context: CommandContext, options: RuntimeTextOptions): Promise<number> {
-  if (options.text === undefined) {
-    throw new Error("missing required flag: --text");
-  }
-  const {paths, runtimeState} = await loadRuntimeCommandState(laneId);
-  const updated = setRuntimeLastHumanInstruction(runtimeState, options.text, toIsoNow());
-  await saveLaneRuntimeState(paths, updated);
-  return printRuntimeMutationResult(context, "runtime.set-last-human-instruction", laneId, updated, `Updated last human instruction for ${laneId}`);
 }
 
 async function runContextShowCommand(laneId: string, context: CommandContext): Promise<number> {
@@ -930,8 +865,6 @@ function buildLaneSummary(lane: Lane, runtimeState: LaneRuntimeState | null, tod
     isActive: runtimeState?.isActive ?? false,
     stateLabel: runtimeState?.isActive ? runtimeState.mode : "cold",
     currentTodoId: runtimeState?.currentTodoId ?? null,
-    currentSummary: runtimeState?.currentSummary ?? null,
-    needsInput: runtimeState?.needsInput ?? null,
     todoCounts: countTodos(todoFile),
   };
 }

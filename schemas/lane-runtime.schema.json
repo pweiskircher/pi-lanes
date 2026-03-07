@@ -15,9 +15,6 @@
     "repoPath": {"type": "string", "minLength": 1},
     "mode": {"type": "string", "enum": ["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]},
     "currentTodoId": {"type": "string", "pattern": "^todo-[a-z0-9]+$"},
-    "currentSummary": {"type": "string"},
-    "needsInput": {"type": "string"},
-    "lastHumanInstruction": {"type": "string"},
     "messageBridge": {
       "type": "object",
       "additionalProperties": false,

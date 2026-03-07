@@ -3,25 +3,9 @@ import assert from "node:assert/strict";
 import {
   createStartedRuntimeState,
   setRuntimeCurrentTodo,
-  setRuntimeLastHumanInstruction,
   setRuntimeMode,
-  setRuntimeNeedsInput,
-  setRuntimeSummary,
 } from "../src/functional-core/runtime-state.js";
 import type {Lane, LaneRuntimeState, LaneTodoFile} from "../src/types.js";
-
-test("setRuntimeSummary updates the summary and timestamp", () => {
-  const state = createRuntimeState();
-  const result = setRuntimeSummary(state, "Finished first pass", "2026-03-07T14:10:00Z");
-  assert.equal(result.currentSummary, "Finished first pass");
-  assert.equal(result.updatedAt, "2026-03-07T14:10:00Z");
-});
-
-test("setRuntimeNeedsInput trims empty text to null", () => {
-  const state = createRuntimeState();
-  const result = setRuntimeNeedsInput(state, "   ", "2026-03-07T14:10:00Z");
-  assert.equal(result.needsInput, null);
-});
 
 test("setRuntimeCurrentTodo accepts a reviewed todo", () => {
   const state = createRuntimeState();
@@ -53,12 +37,6 @@ test("setRuntimeMode validates allowed modes", () => {
   assert.equal(result.success, true);
   if (!result.success) return;
   assert.equal(result.data.mode, "working");
-});
-
-test("setRuntimeLastHumanInstruction clears blank instructions", () => {
-  const state = createRuntimeState();
-  const result = setRuntimeLastHumanInstruction(state, "", "2026-03-07T14:10:00Z");
-  assert.equal(result.lastHumanInstruction, null);
 });
 
 function createRuntimeState(): LaneRuntimeState {
