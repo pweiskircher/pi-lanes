@@ -1,5 +1,5 @@
 import {render} from "preact";
-import {useEffect, useMemo, useRef, useState} from "preact/hooks";
+import {useEffect, useRef, useState} from "preact/hooks";
 import {
   approveTodo,
   createTodo,
@@ -12,35 +12,34 @@ import {
   setTodoStatus,
   updateTodo,
 } from "./api";
-import type {LaneMessage, LaneSnapshot, LaneTodo} from "./types";
+import {ChatTab} from "./components/ChatTab";
+import {EventsTab} from "./components/EventsTab";
+import {LaneHeader} from "./components/LaneHeader";
+import {LaneTabs} from "./components/LaneTabs";
+import {SettingsTab} from "./components/SettingsTab";
+import {TodoBoard} from "./components/TodoBoard";
+import type {LaneSnapshot} from "./types";
+import {createConversationKey, createTodoDraftMap, groupTodosByStatus, isScrolledNearBottom, mergeTodoDraftMap, shortRepo, type LaneUiState, type TodoDraft} from "./ui";
 import "./styles.css";
 
 const SELECTED_LANE_STORAGE_KEY = "pi-lanes.selected-lane-id";
 const POLL_MS = 10000;
-
-type LaneUiState = {
-  readonly messageText: string;
-  readonly messageMode: "steer" | "followUp";
-  readonly contextText: string;
-  readonly settingsOpen: boolean;
-  readonly eventsOpen: boolean;
-};
 
 function App() {
   const [lanes, setLanes] = useState<ReadonlyArray<LaneSnapshot>>([]);
   const [selectedLaneId, setSelectedLaneId] = useState<string | null>(() => loadSelectedLaneId());
   const [selectedLane, setSelectedLane] = useState<LaneSnapshot | null>(null);
   const [uiState, setUiState] = useState<LaneUiState>({
+    activeTab: "chat",
     messageText: "",
     messageMode: "steer",
     contextText: "",
-    settingsOpen: false,
-    eventsOpen: false,
   });
-  const [todoDrafts, setTodoDrafts] = useState<Record<string, {readonly title: string; readonly priority: string; readonly notes: string}>>({});
+  const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoDraft>>({});
   const [newTodo, setNewTodo] = useState({title: "", priority: "medium", notes: ""});
   const conversationRef = useRef<HTMLDivElement | null>(null);
-  const initialConversationScrollDoneRef = useRef(false);
+  const shouldStickConversationToBottomRef = useRef(true);
+  const previousConversationKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     void refreshSnapshot();
@@ -55,7 +54,8 @@ function App() {
     setUiState(state => ({...state, contextText: state.contextText || selectedLane.contextText}));
     setTodoDrafts(createTodoDraftMap(selectedLane.todos));
     setNewTodo({title: "", priority: "medium", notes: ""});
-    initialConversationScrollDoneRef.current = false;
+    shouldStickConversationToBottomRef.current = true;
+    previousConversationKeyRef.current = null;
   }, [selectedLane?.lane.id]);
 
   useEffect(() => {
@@ -66,9 +66,14 @@ function App() {
   useEffect(() => {
     const element = conversationRef.current;
     if (!element) return;
-    if (!initialConversationScrollDoneRef.current) {
+
+    const messages = selectedLane?.liveSession?.recentMessages ?? [];
+    const conversationKey = createConversationKey(messages);
+    const hasConversationChanged = conversationKey !== previousConversationKeyRef.current;
+    previousConversationKeyRef.current = conversationKey;
+
+    if (hasConversationChanged && shouldStickConversationToBottomRef.current) {
       element.scrollTop = element.scrollHeight;
-      initialConversationScrollDoneRef.current = true;
     }
   }, [selectedLane?.liveSession?.recentMessages]);
 
@@ -97,7 +102,7 @@ function App() {
     saveSelectedLaneId(laneId);
     const laneResponse = await fetchLane(laneId);
     setSelectedLane(laneResponse.lane);
-    setUiState({messageText: "", messageMode: "steer", contextText: laneResponse.lane.contextText, settingsOpen: false, eventsOpen: false});
+    setUiState({activeTab: "chat", messageText: "", messageMode: "steer", contextText: laneResponse.lane.contextText});
   }
 
   async function handleSaveContext(): Promise<void> {
@@ -115,6 +120,14 @@ function App() {
       const element = conversationRef.current;
       if (element) element.scrollTop = element.scrollHeight;
     });
+  }
+
+  function handleConversationScroll(event: Event): void {
+    const element = event.currentTarget;
+    if (!(element instanceof HTMLDivElement)) {
+      return;
+    }
+    shouldStickConversationToBottomRef.current = isScrolledNearBottom(element);
   }
 
   async function handleCreateTodo(): Promise<void> {
@@ -156,7 +169,7 @@ function App() {
     setSelectedLane(response.lane);
   }
 
-  const selectedRuntime = selectedLane?.runtimeState;
+  const todoGroups = selectedLane ? groupTodosByStatus(selectedLane.todos) : null;
 
   return (
     <main class="app-shell">
@@ -184,189 +197,55 @@ function App() {
             <div class="muted">Select a lane.</div>
           ) : (
             <>
-              <section class="panel compact-header">
-                <h2>{selectedLane.lane.id}</h2>
-                <div class="muted">{selectedLane.lane.title}</div>
-                <div class="lane-pills header-pills">
-                  <span class="pill">mode {selectedRuntime?.mode ?? "stopped"}</span>
-                  <span class="pill">todo {selectedRuntime?.currentTodoId ?? "—"}</span>
-                  <span class="pill">health {selectedLane.liveSessionHealth.ok ? (selectedLane.liveSessionHealth.isIdle ? "idle" : "busy") : "offline"}</span>
-                  <span class="pill">activity {formatRelativeTime(selectedLane.liveSessionHealth.lastActivityAt)}</span>
-                </div>
-                <details>
-                  <summary>Lane details</summary>
-                  <div class="lane-pills header-pills details-pills">
-                    <span class="pill">repo {shortRepo(selectedLane.lane.repoPath)}</span>
-                    <span class="pill">bookmark {selectedLane.lane.jjBookmark ?? "—"}</span>
-                    <span class="pill">bridge {selectedRuntime?.messageBridge ? `127.0.0.1:${selectedRuntime.messageBridge.port}` : "offline"}</span>
-                    <span class="pill">last activity {formatTimestamp(selectedLane.liveSessionHealth.lastActivityAt)}</span>
-                  </div>
-                </details>
-              </section>
+              <LaneHeader lane={selectedLane} />
+              <section class="lane-tabs-shell">
+                <LaneTabs lane={selectedLane} activeTab={uiState.activeTab} onTabChange={activeTab => setUiState(state => ({...state, activeTab}))} />
 
-              <section class="panel">
-                <h3>Recent conversation</h3>
-                <div class="muted">Last 10 lane messages, formatted for quick steering.</div>
-                <div class="conversation-scroll" ref={conversationRef}>
-                  {(selectedLane.liveSession?.recentMessages ?? []).slice(-10).map(message => <MessageItem key={`${message.role}-${message.timestamp ?? "none"}-${message.content.slice(0, 32)}`} message={message} />)}
-                  {(selectedLane.liveSession?.recentMessages ?? []).length === 0 ? <div class="muted">No recent session messages found.</div> : null}
-                </div>
-              </section>
+                {uiState.activeTab === "chat" ? (
+                  <ChatTab
+                    lane={selectedLane}
+                    conversationRef={conversationRef}
+                    messageText={uiState.messageText}
+                    messageMode={uiState.messageMode}
+                    onConversationScroll={handleConversationScroll}
+                    onMessageTextChange={messageText => setUiState(state => ({...state, messageText}))}
+                    onMessageModeChange={messageMode => setUiState(state => ({...state, messageMode}))}
+                    onSendMessage={() => void handleSendMessage()}
+                  />
+                ) : null}
 
-              <section class="panel">
-                <h3>Send message</h3>
-                <div class="muted">Send a steering message by default, or switch to follow-up.</div>
-                <div class="composer-row">
-                  <select value={uiState.messageMode} onChange={event => setUiState(state => ({...state, messageMode: (event.currentTarget.value === "followUp" ? "followUp" : "steer")}))}>
-                    <option value="steer">steer</option>
-                    <option value="followUp">follow up</option>
-                  </select>
-                  <button type="button" onClick={() => void handleSendMessage()} disabled={!selectedRuntime?.messageBridge}>Send</button>
-                </div>
-                <textarea value={uiState.messageText} onInput={event => setUiState(state => ({...state, messageText: event.currentTarget.value}))} placeholder="Tell the lane what to do next…" disabled={!selectedRuntime?.messageBridge} />
-                <div class="muted">{selectedLane.liveSessionHealth.ok ? `Lane is ${selectedLane.liveSessionHealth.isIdle ? "idle" : "busy"}${selectedLane.liveSessionHealth.lastEventSummary ? ` — ${selectedLane.liveSessionHealth.lastEventSummary}` : ""}` : "This lane is offline or was not started with the lane bridge."}</div>
-              </section>
+                {uiState.activeTab === "todos" && todoGroups ? (
+                  <TodoBoard
+                    lane={selectedLane}
+                    todoGroups={todoGroups}
+                    todoDrafts={todoDrafts}
+                    newTodo={newTodo}
+                    onNewTodoChange={setNewTodo}
+                    onDraftChange={(todoId, draft) => setTodoDrafts(current => ({...current, [todoId]: draft}))}
+                    onCreateTodo={() => void handleCreateTodo()}
+                    onSaveTodo={todoId => void handleSaveTodo(todoId)}
+                    onSetStatus={(todoId, status) => void handleStatusChange(todoId, status)}
+                    onApprove={todoId => void handleApproveTodo(todoId)}
+                    onReject={todoId => void handleRejectTodo(todoId)}
+                    onDelete={todoId => void handleDeleteTodo(todoId)}
+                  />
+                ) : null}
 
-              <section class="panel">
-                <details open={uiState.settingsOpen} onToggle={event => setUiState(state => ({...state, settingsOpen: (event.currentTarget as HTMLDetailsElement).open}))}>
-                  <summary>Lane settings</summary>
-                  <div class="muted section-gap">Lane-specific notes and configuration helpers.</div>
-                  <strong>Lane context</strong>
-                  <textarea value={uiState.contextText} onInput={event => setUiState(state => ({...state, contextText: event.currentTarget.value}))} />
-                  <div class="actions-row">
-                    <button type="button" onClick={() => void handleSaveContext()}>Save context</button>
-                  </div>
-                </details>
-              </section>
+                {uiState.activeTab === "settings" ? (
+                  <SettingsTab
+                    contextText={uiState.contextText}
+                    onContextTextChange={contextText => setUiState(state => ({...state, contextText}))}
+                    onSaveContext={() => void handleSaveContext()}
+                  />
+                ) : null}
 
-              <section class="panel">
-                <details open={uiState.eventsOpen} onToggle={event => setUiState(state => ({...state, eventsOpen: (event.currentTarget as HTMLDetailsElement).open}))}>
-                  <summary>Recent events</summary>
-                  <div class="section-gap">
-                    {selectedLane.recentEvents.map(event => <EventItem key={`${event.timestamp}-${event.kind}`} event={event} />)}
-                  </div>
-                </details>
-              </section>
-
-              <section class="panel">
-                <h3>Add TODO</h3>
-                <div class="todo-create-row">
-                  <input type="text" value={newTodo.title} placeholder="TODO title" onInput={event => setNewTodo(state => ({...state, title: event.currentTarget.value}))} />
-                  <select value={newTodo.priority} onChange={event => setNewTodo(state => ({...state, priority: event.currentTarget.value}))}>
-                    <option value="medium">medium</option>
-                    <option value="high">high</option>
-                    <option value="low">low</option>
-                  </select>
-                  <button type="button" onClick={() => void handleCreateTodo()}>Add</button>
-                </div>
-                <textarea value={newTodo.notes} placeholder="Optional notes" onInput={event => setNewTodo(state => ({...state, notes: event.currentTarget.value}))} />
-              </section>
-
-              <section class="panel">
-                <h3>TODOs</h3>
-                <div class="todo-list">
-                  {selectedLane.todos.length === 0 ? <div class="muted">No TODOs.</div> : selectedLane.todos.map(todo => (
-                    <TodoItem
-                      key={todo.id}
-                      todo={todo}
-                      draft={todoDrafts[todo.id] ?? {title: todo.title, priority: todo.priority, notes: todo.notes ?? ""}}
-                      onDraftChange={draft => setTodoDrafts(current => ({...current, [todo.id]: draft}))}
-                      onSave={() => void handleSaveTodo(todo.id)}
-                      onSetStatus={status => void handleStatusChange(todo.id, status)}
-                      onApprove={() => void handleApproveTodo(todo.id)}
-                      onReject={() => void handleRejectTodo(todo.id)}
-                      onDelete={() => void handleDeleteTodo(todo.id)}
-                    />
-                  ))}
-                </div>
+                {uiState.activeTab === "events" ? <EventsTab lane={selectedLane} /> : null}
               </section>
             </>
           )}
         </section>
       </div>
     </main>
-  );
-}
-
-type MessageItemProps = {message: LaneMessage};
-
-function MessageItem({message}: MessageItemProps) {
-  return (
-    <div class={`message ${message.role}`}>
-      <div class="message-header">
-        <div class="message-role">{message.role}</div>
-        <div class="muted">{formatTimestamp(message.timestamp)}</div>
-      </div>
-      <div class="message-body">{message.content}</div>
-    </div>
-  );
-}
-
-function EventItem({event}: {readonly event: LaneSnapshot["recentEvents"][number]}) {
-  return (
-    <div class="event-item">
-      <div class="message-header">
-        <strong>{event.kind}</strong>
-        <span class="muted">{formatTimestamp(event.timestamp)}</span>
-      </div>
-      <div>{event.summary}</div>
-      {event.details ? <div class="muted">{event.details}</div> : null}
-    </div>
-  );
-}
-
-type TodoDraft = {readonly title: string; readonly priority: string; readonly notes: string};
-
-type TodoItemProps = {
-  readonly todo: LaneTodo;
-  readonly draft: TodoDraft;
-  readonly onDraftChange: (draft: TodoDraft) => void;
-  readonly onSave: () => void;
-  readonly onSetStatus: (status: string) => void;
-  readonly onApprove: () => void;
-  readonly onReject: () => void;
-  readonly onDelete: () => void;
-};
-
-function TodoItem(props: TodoItemProps) {
-  const {todo, draft, onDraftChange, onSave, onSetStatus, onApprove, onReject, onDelete} = props;
-  return (
-    <div class="todo-card">
-      <div class="message-header">
-        <div>
-          <strong>{todo.id}</strong> <span class={`status-${todo.status}`}>[{todo.status}]</span>
-        </div>
-        <div class="actions-row">
-          {todo.status === "proposed" ? (
-            <>
-              <button type="button" onClick={onApprove}>Approve</button>
-              <button type="button" onClick={onReject}>Reject</button>
-            </>
-          ) : null}
-          <button type="button" onClick={onDelete}>Delete</button>
-        </div>
-      </div>
-      <div class="todo-edit-row">
-        <input type="text" value={draft.title} onInput={event => onDraftChange({...draft, title: event.currentTarget.value})} />
-        <select value={draft.priority} onChange={event => onDraftChange({...draft, priority: event.currentTarget.value})}>
-          <option value="low">low</option>
-          <option value="medium">medium</option>
-          <option value="high">high</option>
-        </select>
-        <select value={todo.status} onChange={event => onSetStatus(event.currentTarget.value)}>
-          <option value="open">open</option>
-          <option value="in_progress">in_progress</option>
-          <option value="blocked">blocked</option>
-          <option value="done">done</option>
-          <option value="dropped">dropped</option>
-        </select>
-      </div>
-      <textarea value={draft.notes} onInput={event => onDraftChange({...draft, notes: event.currentTarget.value})} />
-      <div class="actions-row">
-        <button type="button" onClick={onSave}>Save</button>
-      </div>
-      {todo.proposalReason ? <div class="muted">Reason: {todo.proposalReason}</div> : null}
-    </div>
   );
 }
 
@@ -388,41 +267,6 @@ function saveSelectedLaneId(value: string | null): void {
   } catch {
     // ignore
   }
-}
-
-function shortRepo(value: string): string {
-  const parts = value.split("/").filter(Boolean);
-  return parts.slice(-2).join("/") || value;
-}
-
-function formatTimestamp(value: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function formatRelativeTime(value: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const diffMinutes = Math.floor((Date.now() - date.getTime()) / 60000);
-  if (diffMinutes < 1) return "just now";
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
-}
-
-function createTodoDraftMap(todos: ReadonlyArray<LaneTodo>): Record<string, TodoDraft> {
-  return Object.fromEntries(todos.map(todo => [todo.id, {title: todo.title, priority: todo.priority, notes: todo.notes ?? ""}]));
-}
-
-function mergeTodoDraftMap(current: Record<string, TodoDraft>, todos: ReadonlyArray<LaneTodo>): Record<string, TodoDraft> {
-  const next: Record<string, TodoDraft> = {};
-  for (const todo of todos) {
-    next[todo.id] = current[todo.id] ?? {title: todo.title, priority: todo.priority, notes: todo.notes ?? ""};
-  }
-  return next;
 }
 
 render(<App />, document.getElementById("app")!);

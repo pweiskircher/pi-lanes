@@ -12,6 +12,8 @@
     "check": "npm run typecheck && npm run test",
     "typecheck": "tsc --project tsconfig.json",
     "test": "node --import tsx --test test/**/*.test.ts",
+    "dashboard:dev": "npm --prefix dashboard-app run dev",
+    "dashboard:dev:full": "node scripts/dashboard-dev-full.mjs",
     "dashboard:build": "npm --prefix dashboard-app run build"
   },
   "devDependencies": {

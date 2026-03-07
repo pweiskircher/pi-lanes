@@ -101,6 +101,17 @@ Implemented now:
    - `npm run dashboard:build`
    - `node bin/pi-lane.mjs dashboard serve --port 4310`
 
+For frontend development with hot reload:
+- one-command mode: `npm run dashboard:dev:full`
+- open `http://127.0.0.1:4311`
+
+Or run the pieces separately:
+- start the backend API/server: `node bin/pi-lane.mjs dashboard serve --port 4310`
+- in another terminal, start Vite: `npm run dashboard:dev`
+- open `http://127.0.0.1:4311`
+
+The Vite dev server proxies `/api/*` to the dashboard backend on port `4310`.
+
 The dashboard currently supports:
 - lane list and detail views
 - live lane health and idle/busy state
