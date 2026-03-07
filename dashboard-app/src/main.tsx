@@ -5,6 +5,7 @@ import {
   createTodo,
   deleteTodo,
   fetchLane,
+  fetchLaneLiveOutput,
   fetchSnapshot,
   rejectTodo,
   saveLaneContext,
@@ -18,17 +19,20 @@ import {LaneHeader} from "./components/LaneHeader";
 import {LaneTabs} from "./components/LaneTabs";
 import {SettingsTab} from "./components/SettingsTab";
 import {TodoBoard} from "./components/TodoBoard";
-import type {LaneSnapshot} from "./types";
+import type {LaneLiveOutput, LaneSnapshot} from "./types";
 import {createConversationKey, createTodoDraftMap, groupTodosByStatus, isScrolledNearBottom, mergeTodoDraftMap, shortRepo, type LaneUiState, type TodoDraft} from "./ui";
 import "./styles.css";
 
 const SELECTED_LANE_STORAGE_KEY = "pi-lanes.selected-lane-id";
 const POLL_MS = 10000;
+const LIVE_OUTPUT_POLL_MS = 600;
 
 function App() {
   const [lanes, setLanes] = useState<ReadonlyArray<LaneSnapshot>>([]);
   const [selectedLaneId, setSelectedLaneId] = useState<string | null>(() => loadSelectedLaneId());
   const [selectedLane, setSelectedLane] = useState<LaneSnapshot | null>(null);
+  const [liveOutput, setLiveOutput] = useState<LaneLiveOutput | null>(null);
+  const [recentCompletedLiveOutput, setRecentCompletedLiveOutput] = useState<LaneLiveOutput | null>(null);
   const [uiState, setUiState] = useState<LaneUiState>({
     activeTab: "chat",
     messageText: "",
@@ -54,6 +58,8 @@ function App() {
     setUiState(state => ({...state, contextText: state.contextText || selectedLane.contextText}));
     setTodoDrafts(createTodoDraftMap(selectedLane.todos));
     setNewTodo({title: "", priority: "medium", notes: ""});
+    setLiveOutput(null);
+    setRecentCompletedLiveOutput(null);
     shouldStickConversationToBottomRef.current = true;
     previousConversationKeyRef.current = null;
   }, [selectedLane?.lane.id]);
@@ -68,14 +74,65 @@ function App() {
     if (!element) return;
 
     const messages = selectedLane?.liveSession?.recentMessages ?? [];
-    const conversationKey = createConversationKey(messages);
+    const conversationKey = `${createConversationKey(messages)}:${liveOutput?.updatedAt ?? "none"}:${liveOutput?.isStreaming === true ? "streaming" : "idle"}:${recentCompletedLiveOutput?.updatedAt ?? "none"}`;
     const hasConversationChanged = conversationKey !== previousConversationKeyRef.current;
     previousConversationKeyRef.current = conversationKey;
 
     if (hasConversationChanged && shouldStickConversationToBottomRef.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedLane?.liveSession?.recentMessages]);
+  }, [liveOutput?.isStreaming, liveOutput?.updatedAt, recentCompletedLiveOutput?.updatedAt, selectedLane?.liveSession?.recentMessages]);
+
+  useEffect(() => {
+    if (!selectedLaneId || uiState.activeTab !== "chat") {
+      setLiveOutput(null);
+      setRecentCompletedLiveOutput(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshLiveOutput = async (): Promise<void> => {
+      try {
+        const response = await fetchLaneLiveOutput(selectedLaneId);
+        if (!cancelled) {
+          setLiveOutput(currentLiveOutput => {
+            if (currentLiveOutput?.isStreaming && response.liveOutput === null) {
+              setRecentCompletedLiveOutput(currentLiveOutput);
+            }
+            return response.liveOutput;
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setLiveOutput(null);
+        }
+      }
+    };
+
+    void refreshLiveOutput();
+    const interval = window.setInterval(() => {
+      void refreshLiveOutput();
+    }, LIVE_OUTPUT_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [selectedLaneId, uiState.activeTab]);
+
+  useEffect(() => {
+    if (!selectedLane) {
+      return;
+    }
+    const lastAssistantMessage = [...(selectedLane.liveSession?.recentMessages ?? [])].reverse().find(message => message.role === "assistant") ?? null;
+    if (liveOutput && lastAssistantMessage?.content === liveOutput.content) {
+      setLiveOutput(null);
+    }
+    if (recentCompletedLiveOutput && lastAssistantMessage?.content === recentCompletedLiveOutput.content) {
+      setRecentCompletedLiveOutput(null);
+    }
+  }, [liveOutput, recentCompletedLiveOutput, selectedLane]);
 
   async function refreshSnapshot(): Promise<void> {
     const snapshot = await fetchSnapshot();
@@ -90,6 +147,8 @@ function App() {
       setSelectedLaneId(null);
       saveSelectedLaneId(null);
       setSelectedLane(null);
+      setLiveOutput(null);
+      setRecentCompletedLiveOutput(null);
       return;
     }
 
@@ -204,6 +263,8 @@ function App() {
                 {uiState.activeTab === "chat" ? (
                   <ChatTab
                     lane={selectedLane}
+                    liveOutput={liveOutput}
+                    recentCompletedLiveOutput={recentCompletedLiveOutput}
                     conversationRef={conversationRef}
                     messageText={uiState.messageText}
                     messageMode={uiState.messageMode}

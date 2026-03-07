@@ -196,20 +196,16 @@ textarea { width: 100%; min-height: 72px; resize: vertical; }
 }
 .message.user .message-body { border-left: 3px solid #60a5fa; }
 .message.assistant .message-body { border-left: 3px solid #34d399; }
+.live-message .message-body {
+  border-left-color: #f59e0b;
+}
+.live-message .message-header .muted {
+  color: #fbbf24;
+}
 .message-body {
   white-space: pre-wrap;
   line-height: 1.4;
   margin-top: 4px;
-  padding-left: 10px;
-}
-.message-body.clamped {
-  display: -webkit-box;
-  -webkit-line-clamp: 8;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.message-actions-row {
-  margin-top: 6px;
   padding-left: 10px;
 }
 .text-button {

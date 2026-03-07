@@ -43,6 +43,14 @@ export type LaneLiveSession = {
   readonly recentMessages: ReadonlyArray<LaneMessage>;
 };
 
+export type LaneLiveOutput = {
+  readonly laneId: string;
+  readonly isStreaming: boolean;
+  readonly role: "assistant";
+  readonly content: string;
+  readonly updatedAt: string;
+};
+
 export type LaneEvent = {
   readonly timestamp: string;
   readonly kind: string;

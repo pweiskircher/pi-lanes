@@ -30,6 +30,13 @@ let liveSessionHealth: {
   readonly lastActivityAt: string;
   readonly lastEventSummary: string;
 } | null = null;
+let liveAssistantOutput: {
+  readonly laneId: string;
+  readonly isStreaming: boolean;
+  readonly role: "assistant";
+  readonly content: string;
+  readonly updatedAt: string;
+} | null = null;
 const laneEventAppendQueues = new Map<string, Promise<void>>();
 
 export default function (pi: ExtensionAPI) {
@@ -55,7 +62,36 @@ export default function (pi: ExtensionAPI) {
     const lane = await findCurrentLane();
     if (!lane) return;
     setLiveSessionHealth(lane.id, false, "Agent turn started");
+    clearLiveAssistantOutput(lane.id);
     await appendLaneEvent(lane.id, "agent_start", "Agent turn started", null);
+  });
+
+  pi.on("message_start", async event => {
+    const lane = await findCurrentLane();
+    if (!lane) return;
+    if (readMessageRole(event.message) !== "assistant") return;
+    setLiveAssistantOutput(lane.id, true, readAssistantMessageText(event.message) ?? "");
+  });
+
+  pi.on("message_update", async event => {
+    const lane = await findCurrentLane();
+    if (!lane) return;
+    if (readMessageRole(event.message) !== "assistant") return;
+    const content = readAssistantMessageText(event.message);
+    if (content === null) return;
+    setLiveAssistantOutput(lane.id, true, content);
+  });
+
+  pi.on("message_end", async event => {
+    const lane = await findCurrentLane();
+    if (!lane) return;
+    if (readMessageRole(event.message) !== "assistant") return;
+    const content = readAssistantMessageText(event.message);
+    if (content === null) {
+      clearLiveAssistantOutput(lane.id);
+      return;
+    }
+    setLiveAssistantOutput(lane.id, false, content);
   });
 
   pi.on("turn_end", async event => {
@@ -69,6 +105,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_end", async () => {
     const lane = await findCurrentLane();
     if (!lane) return;
+    clearLiveAssistantOutput(lane.id);
     setLiveSessionHealth(lane.id, true, "Agent is idle");
     await appendLaneEvent(lane.id, "agent_end", "Agent is idle", null);
   });
@@ -211,6 +248,19 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
+        if (method === "GET" && url.pathname === "/live-output") {
+          const authorization = request.headers.authorization;
+          if (authorization !== `Bearer ${authToken}`) {
+            sendJson(response, 403, {ok: false, error: "invalid auth token"});
+            return;
+          }
+          sendJson(response, 200, {
+            ok: true,
+            liveOutput: liveAssistantOutput?.laneId === lane.id && liveAssistantOutput.isStreaming ? liveAssistantOutput : null,
+          });
+          return;
+        }
+
         if (method === "POST" && url.pathname === "/message") {
           const body = await readJsonBody(request);
           if (body.authToken !== authToken) {
@@ -299,6 +349,7 @@ async function shutdownMessageBridge(): Promise<void> {
   const runtimeState = await loadOrCreateRuntimeState(lane);
   await saveLaneRuntimeState(getLanePaths(), setRuntimeMessageBridge(runtimeState, null, new Date().toISOString()));
   liveSessionHealth = null;
+  liveAssistantOutput = null;
 }
 
 async function findLaneById(laneId: string): Promise<Lane | null> {
@@ -332,6 +383,48 @@ function setLiveSessionHealth(laneId: string, isIdle: boolean, lastEventSummary:
     lastActivityAt: new Date().toISOString(),
     lastEventSummary,
   };
+}
+
+function setLiveAssistantOutput(laneId: string, isStreaming: boolean, content: string): void {
+  liveAssistantOutput = {
+    laneId,
+    isStreaming,
+    role: "assistant",
+    content,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function clearLiveAssistantOutput(laneId: string): void {
+  if (liveAssistantOutput?.laneId === laneId) {
+    liveAssistantOutput = null;
+  }
+}
+
+function readMessageRole(message: unknown): string | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  return "role" in message && typeof (message as {readonly role?: unknown}).role === "string"
+    ? ((message as {readonly role: string}).role)
+    : null;
+}
+
+function readAssistantMessageText(message: unknown): string | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  const content = "content" in message ? (message as {readonly content?: unknown}).content : null;
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  const text = content
+    .filter(part => part && typeof part === "object" && "type" in part && (part as {readonly type: unknown}).type === "text")
+    .map(part => (part as {readonly text?: unknown}).text)
+    .filter((part): part is string => typeof part === "string")
+    .join("\n")
+    .trim();
+  return text.length > 0 ? text : null;
 }
 
 function summarizeText(text: string, maxLength: number): string {

@@ -126,6 +126,32 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
         return;
       }
 
+      const liveOutputMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/live-output$/);
+      if (method === "GET" && liveOutputMatch) {
+        const laneId = liveOutputMatch[1] ?? "";
+        const runtimeState = await loadLaneRuntimeState(paths, laneId);
+        if (!runtimeState?.messageBridge) {
+          sendJson(response, 200, {ok: true, liveOutput: null});
+          return;
+        }
+
+        const bridgeResponse = await fetch(`http://127.0.0.1:${runtimeState.messageBridge.port}/live-output`, {
+          headers: {authorization: `Bearer ${runtimeState.messageBridge.authToken}`},
+        });
+        const bridgeJson = (await bridgeResponse.json()) as Record<string, unknown>;
+        if (!bridgeResponse.ok || bridgeJson.ok !== true) {
+          throw new Error(typeof bridgeJson.error === "string" ? bridgeJson.error : `bridge request failed: ${bridgeResponse.status}`);
+        }
+
+        sendJson(response, 200, {
+          ok: true,
+          liveOutput: bridgeJson.liveOutput !== null && typeof bridgeJson.liveOutput === "object" && !Array.isArray(bridgeJson.liveOutput)
+            ? bridgeJson.liveOutput
+            : null,
+        });
+        return;
+      }
+
       const createTodoMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/todos$/);
       if (method === "POST" && createTodoMatch) {
         const laneId = createTodoMatch[1] ?? "";

@@ -1,4 +1,4 @@
-import type {LaneResponse, SnapshotResponse} from "./types";
+import type {LaneLiveOutput, LaneResponse, SnapshotResponse} from "./types";
 
 export async function fetchSnapshot(): Promise<SnapshotResponse> {
   return await fetchJson<SnapshotResponse>("/api/snapshot");
@@ -22,6 +22,10 @@ export async function sendLaneMessage(laneId: string, message: string, deliverAs
     headers: {"content-type": "application/json"},
     body: JSON.stringify({message, deliverAs}),
   });
+}
+
+export async function fetchLaneLiveOutput(laneId: string): Promise<{readonly ok: true; readonly liveOutput: LaneLiveOutput | null}> {
+  return await fetchJson<{readonly ok: true; readonly liveOutput: LaneLiveOutput | null}>(`/api/lanes/${encodeURIComponent(laneId)}/live-output`);
 }
 
 export async function createTodo(laneId: string, payload: {readonly title: string; readonly priority: string; readonly notes: string}): Promise<LaneResponse> {
