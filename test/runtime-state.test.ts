@@ -4,7 +4,7 @@ import {
   createStartedRuntimeState,
   setRuntimeCurrentTodo,
   setRuntimeMode,
-} from "../src/functional-core/runtime-state.js";
+} from "../src/runtime/runtime-state.js";
 import type {Lane, LaneRuntimeState, LaneTodoFile} from "../src/types.js";
 
 test("setRuntimeCurrentTodo accepts a reviewed todo", () => {

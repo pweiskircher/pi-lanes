@@ -2,13 +2,13 @@ import {createServer, type IncomingMessage, type Server, type ServerResponse} fr
 import {randomUUID} from "node:crypto";
 import type {ExtensionAPI} from "@mariozechner/pi-coding-agent";
 import {Type} from "@sinclair/typebox";
-import {createProposedTodo} from "../src/functional-core/todo-transitions.js";
+import {createProposedTodo} from "../src/todos/todo-transitions.js";
 import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
   setRuntimeCurrentTodo,
   setRuntimeMessageBridge,
-} from "../src/functional-core/runtime-state.js";
+} from "../src/runtime/runtime-state.js";
 import {
   getDefaultLanePaths,
   loadLaneEventLog,
@@ -18,7 +18,7 @@ import {
   saveLaneEventLog,
   saveLaneRuntimeState,
   saveLaneTodoFile,
-} from "../src/imperative-shell/lane-store.js";
+} from "../src/storage/lane-store.js";
 import type {Lane, LaneEvent, LaneEventKind, LaneRuntimeState, LaneTodo, TodoPriority} from "../src/types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);

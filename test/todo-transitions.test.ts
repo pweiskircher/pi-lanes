@@ -8,7 +8,7 @@ import {
   editTodo,
   rejectProposedTodo,
   setTodoStatus,
-} from "../src/functional-core/todo-transitions.js";
+} from "../src/todos/todo-transitions.js";
 import type {LaneTodoFile} from "../src/types.js";
 
 test("createHumanTodo appends an open todo", () => {

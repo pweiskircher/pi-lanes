@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {formatInitialLaneContext, needsLaneOnboarding} from "../src/functional-core/lane-context.js";
+import {formatInitialLaneContext, needsLaneOnboarding} from "../src/lanes/lane-context.js";
 import type {Lane} from "../src/types.js";
 
 const lane: Lane = {

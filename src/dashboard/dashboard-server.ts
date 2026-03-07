@@ -3,13 +3,13 @@
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
 import {readFile} from "node:fs/promises";
 import {extname, resolve} from "node:path";
-import {approveProposedTodo, createHumanTodo, deleteTodo, editTodo, rejectProposedTodo, setTodoStatus} from "../functional-core/todo-transitions.js";
+import {approveProposedTodo, createHumanTodo, deleteTodo, editTodo, rejectProposedTodo, setTodoStatus} from "../todos/todo-transitions.js";
 import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
   setRuntimeCurrentTodo,
   setRuntimeMode,
-} from "../functional-core/runtime-state.js";
+} from "../runtime/runtime-state.js";
 import {
   getDefaultLanePaths,
   getLaneById,
@@ -20,9 +20,9 @@ import {
   loadLaneTodoFile,
   saveLaneRuntimeState,
   saveLaneTodoFile,
-} from "./lane-store.js";
-import {readTextFile, writeTextFile} from "./json-files.js";
-import {findLaneControlledSession} from "./pi-session-control.js";
+} from "../storage/lane-store.js";
+import {readTextFile, writeTextFile} from "../storage/json-files.js";
+import {findLaneControlledSession} from "../pi/pi-session-control.js";
 import type {Lane, LaneRuntimeState, LaneTodo, TodoPriority, TodoStatus} from "../types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);

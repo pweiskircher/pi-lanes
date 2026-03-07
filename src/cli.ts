@@ -7,8 +7,8 @@ import {stdin as input, stdout as output} from "node:process";
 import {resolve, dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Command} from "commander";
-import {createLane} from "./functional-core/lane-registry-transitions.js";
-import {formatInitialLaneContext, needsLaneOnboarding} from "./functional-core/lane-context.js";
+import {createLane} from "./lanes/lane-registry-transitions.js";
+import {formatInitialLaneContext, needsLaneOnboarding} from "./lanes/lane-context.js";
 import {
   approveProposedTodo,
   createHumanTodo,
@@ -16,16 +16,16 @@ import {
   editTodo,
   rejectProposedTodo,
   setTodoStatus,
-} from "./functional-core/todo-transitions.js";
-import {buildDoctorLaneReport, buildDoctorReport} from "./functional-core/doctor.js";
-import {formatLaneBriefing} from "./functional-core/lane-briefing.js";
-import {formatLaneStartupPrompt} from "./functional-core/lane-startup-prompt.js";
+} from "./todos/todo-transitions.js";
+import {buildDoctorLaneReport, buildDoctorReport} from "./lanes/doctor.js";
+import {formatLaneBriefing} from "./lanes/lane-briefing.js";
+import {formatLaneStartupPrompt} from "./lanes/lane-startup-prompt.js";
 import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
   setRuntimeCurrentTodo,
   setRuntimeMode,
-} from "./functional-core/runtime-state.js";
+} from "./runtime/runtime-state.js";
 import {
   assertRepoExists,
   deleteLaneFiles,
@@ -41,11 +41,11 @@ import {
   saveLaneRegistry,
   saveLaneRuntimeState,
   saveLaneTodoFile,
-} from "./imperative-shell/lane-store.js";
-import {readTextFile, writeTextFile} from "./imperative-shell/json-files.js";
-import {serveDashboard} from "./imperative-shell/dashboard-server.js";
-import {ensurePiExists, launchPi} from "./imperative-shell/pi-launch.js";
-import {hasSavedPiSessionForCwd} from "./imperative-shell/pi-session-discovery.js";
+} from "./storage/lane-store.js";
+import {readTextFile, writeTextFile} from "./storage/json-files.js";
+import {serveDashboard} from "./dashboard/dashboard-server.js";
+import {ensurePiExists, launchPi} from "./pi/pi-launch.js";
+import {hasSavedPiSessionForCwd} from "./pi/pi-session-discovery.js";
 import type {
   CreateHumanTodoOptions,
   Lane,

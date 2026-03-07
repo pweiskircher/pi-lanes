@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createLane} from "../src/functional-core/lane-registry-transitions.js";
+import {createLane} from "../src/lanes/lane-registry-transitions.js";
 import type {LaneRegistry} from "../src/types.js";
 
 test("createLane appends a new lane", () => {

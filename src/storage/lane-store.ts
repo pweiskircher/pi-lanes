@@ -4,9 +4,9 @@ import {access, mkdir, rm} from "node:fs/promises";
 import {constants as fsConstants} from "node:fs";
 import {homedir} from "node:os";
 import {resolve} from "node:path";
-import {parseLaneEventLog, parseLaneRegistry, parseLaneRuntimeState, parseLaneTodoFile} from "../functional-core/validate-lane-data.js";
+import {parseLaneEventLog, parseLaneRegistry, parseLaneRuntimeState, parseLaneTodoFile} from "../shared/validate-lane-data.js";
 import type {Lane, LaneEventLog, LaneRegistry, LaneRuntimeState, LaneTodoFile} from "../types.js";
-import {readJsonFile, readTextFile, writeJsonFile} from "./json-files.js";
+import {readJsonFile, readTextFile, writeJsonFile} from "../storage/json-files.js";
 
 export type LanePaths = {
   readonly rootPath: string;
