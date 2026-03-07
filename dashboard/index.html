@@ -48,7 +48,8 @@
       </section>
     </main>
     <script>
-      let selectedLaneId = null;
+      const SELECTED_LANE_STORAGE_KEY = 'pi-lanes.selected-lane-id';
+      let selectedLaneId = loadSelectedLaneId();
       let snapshot = [];
 
       document.getElementById('refreshButton').addEventListener('click', refresh);
@@ -60,6 +61,12 @@
         const response = await fetch('/api/snapshot');
         const data = await response.json();
         snapshot = data.lanes;
+
+        if (selectedLaneId && !snapshot.some(lane => lane.lane.id === selectedLaneId)) {
+          selectedLaneId = null;
+          saveSelectedLaneId(null);
+        }
+
         renderLaneList();
         if (selectedLaneId) {
           await loadLane(selectedLaneId);
@@ -89,6 +96,7 @@
 
       async function loadLane(laneId) {
         selectedLaneId = laneId;
+        saveSelectedLaneId(laneId);
         renderLaneList();
         const response = await fetch(`/api/lanes/${encodeURIComponent(laneId)}`);
         const data = await response.json();
@@ -335,6 +343,26 @@
       function shortRepo(value) {
         const parts = String(value).split('/').filter(Boolean);
         return parts.slice(-2).join('/') || value;
+      }
+
+      function loadSelectedLaneId() {
+        try {
+          return window.localStorage.getItem(SELECTED_LANE_STORAGE_KEY);
+        } catch {
+          return null;
+        }
+      }
+
+      function saveSelectedLaneId(value) {
+        try {
+          if (value) {
+            window.localStorage.setItem(SELECTED_LANE_STORAGE_KEY, value);
+          } else {
+            window.localStorage.removeItem(SELECTED_LANE_STORAGE_KEY);
+          }
+        } catch {
+          // Ignore localStorage failures.
+        }
       }
 
       function formatTimestamp(value) {
