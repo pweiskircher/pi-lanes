@@ -23,11 +23,16 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 
 ## Repo layout
 
+- `config/` — lane registry
+- `state/runtime/` — per-lane runtime state files
+- `state/todos/` — per-lane TODO files
 - `docs/design-plans/pi-lanes-v1.md` — V1 design
 - `docs/plans/pi-lanes-v1-implementation.md` — staged implementation plan
 - `docs/pi-skills-and-extensions.md` — proposed pi customizations
 - `schemas/` — JSON Schemas for lane data files
 - `examples/` — example lane files
+- `src/` — CLI and lane logic
+- `test/` — focused tests for pure lane logic
 
 ## Core model
 
@@ -37,6 +42,30 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 - **TODO**: a lane-scoped work item.
 - **Proposed TODO**: an LLM-created TODO that requires review.
 
+## Current implementation status
+
+Implemented now:
+- `pi-lane-start <lane-id>` via `bin/pi-lane-start.mjs`
+- `pi-lane list`
+- `pi-lane show <lane-id>`
+- `pi-lane todo add <lane-id> --title ...`
+- `pi-lane todo approve <lane-id> <todo-id>`
+- `pi-lane todo reject <lane-id> <todo-id>`
+- runtime state file updates on lane start and stop
+- validation and tests for TODO transitions
+
+## Quick start
+
+1. Install dependencies:
+   - `npm install`
+2. Copy `examples/lanes.example.json` into `config/lanes.json` and adapt it.
+3. Create any real lane workspaces you reference.
+4. Start a lane:
+   - `node bin/pi-lane-start.mjs <lane-id>`
+5. Inspect lanes:
+   - `node bin/pi-lane.mjs list`
+   - `node bin/pi-lane.mjs show <lane-id>`
+
 ## Next step
 
-Implement `pi-lane-start`, lane storage, lane runtime state updates, and dashboard CRUD for TODOs.
+Improve pi session integration, add more TODO editing commands, and connect the dashboard to the shared runtime and TODO files.
