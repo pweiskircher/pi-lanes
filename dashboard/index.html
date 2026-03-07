@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pi lanes dashboard</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; background: #111827; color: #f9fafb; }
+      header { padding: 16px 20px; border-bottom: 1px solid #374151; display:flex; justify-content:space-between; align-items:center; }
+      main { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 65px); }
+      aside { border-right: 1px solid #374151; padding: 12px; overflow:auto; }
+      section { padding: 16px; overflow:auto; }
+      .lane-card { border: 1px solid #374151; border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: pointer; background:#0f172a; }
+      .lane-card.active { border-color: #60a5fa; }
+      .muted { color: #9ca3af; }
+      .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; background:#1f2937; font-size: 12px; margin-right: 6px; }
+      .todo { border: 1px solid #374151; border-radius: 8px; padding: 10px; margin-bottom: 8px; background:#0b1220; }
+      .row { display:flex; gap: 8px; align-items:center; flex-wrap: wrap; }
+      input, textarea, select, button { border-radius: 8px; border: 1px solid #4b5563; background:#111827; color:#f9fafb; padding: 8px; }
+      textarea { width: 100%; min-height: 70px; }
+      input[type=text] { min-width: 220px; }
+      button { cursor: pointer; }
+      h2, h3 { margin-top: 0; }
+      .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-bottom: 16px; }
+      .panel { border: 1px solid #374151; border-radius: 10px; padding: 12px; background:#0f172a; margin-bottom: 14px; }
+      .status-proposed { color: #fbbf24; }
+      .status-open { color: #93c5fd; }
+      .status-in_progress { color: #a78bfa; }
+      .status-blocked { color: #f87171; }
+      .status-done { color: #34d399; }
+      .status-dropped { color: #9ca3af; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>pi lanes dashboard</strong>
+      <button id="refreshButton">Refresh</button>
+    </header>
+    <main>
+      <aside>
+        <div id="laneList"></div>
+      </aside>
+      <section>
+        <div id="laneDetail" class="muted">Select a lane.</div>
+      </section>
+    </main>
+    <script>
+      let selectedLaneId = null;
+      let snapshot = [];
+
+      document.getElementById('refreshButton').addEventListener('click', refresh);
+
+      async function refresh() {
+        const response = await fetch('/api/snapshot');
+        const data = await response.json();
+        snapshot = data.lanes;
+        renderLaneList();
+        if (selectedLaneId) {
+          await loadLane(selectedLaneId);
+        }
+      }
+
+      function renderLaneList() {
+        const container = document.getElementById('laneList');
+        container.innerHTML = '';
+        for (const lane of snapshot) {
+          const card = document.createElement('div');
+          card.className = 'lane-card' + (lane.lane.id === selectedLaneId ? ' active' : '');
+          card.innerHTML = `
+            <div><strong>${escapeHtml(lane.lane.id)}</strong></div>
+            <div class="muted">${escapeHtml(lane.lane.title)}</div>
+            <div class="row" style="margin-top:8px;">
+              <span class="pill">port ${lane.lane.port}</span>
+              <span class="pill">open ${lane.todoCounts.open}</span>
+              <span class="pill">proposed ${lane.todoCounts.proposed}</span>
+            </div>
+          `;
+          card.addEventListener('click', () => loadLane(lane.lane.id));
+          container.appendChild(card);
+        }
+      }
+
+      async function loadLane(laneId) {
+        selectedLaneId = laneId;
+        renderLaneList();
+        const response = await fetch(`/api/lanes/${encodeURIComponent(laneId)}`);
+        const data = await response.json();
+        renderLaneDetail(data.lane);
+      }
+
+      function renderLaneDetail(detail) {
+        const container = document.getElementById('laneDetail');
+        const runtime = detail.runtimeState || {};
+        container.innerHTML = `
+          <div class="panel">
+            <h2>${escapeHtml(detail.lane.id)}</h2>
+            <div class="muted">${escapeHtml(detail.lane.title)}</div>
+            <div class="grid" style="margin-top:12px;">
+              <div class="panel"><strong>Port</strong><div>${detail.lane.port}</div></div>
+              <div class="panel"><strong>Bookmark</strong><div>${escapeHtml(detail.lane.jjBookmark)}</div></div>
+              <div class="panel"><strong>Mode</strong><div>${escapeHtml(runtime.mode || 'stopped')}</div></div>
+              <div class="panel"><strong>Current TODO</strong><div>${escapeHtml(runtime.currentTodoId || '—')}</div></div>
+            </div>
+            <div><strong>Summary:</strong> ${escapeHtml(runtime.currentSummary || '—')}</div>
+            <div><strong>Needs input:</strong> ${escapeHtml(runtime.pendingQuestion || '—')}</div>
+          </div>
+
+          <div class="panel">
+            <h3>Add TODO</h3>
+            <div class="row">
+              <input id="newTitle" type="text" placeholder="TODO title">
+              <select id="newPriority">
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+                <option value="low">low</option>
+              </select>
+              <button onclick="createTodo()">Add</button>
+            </div>
+            <textarea id="newNotes" placeholder="Optional notes"></textarea>
+          </div>
+
+          <div class="panel">
+            <h3>TODOs</h3>
+            ${detail.todos.map(renderTodo).join('') || '<div class="muted">No TODOs.</div>'}
+          </div>
+        `;
+      }
+
+      function renderTodo(todo) {
+        const noteValue = todo.notes || '';
+        return `
+          <div class="todo">
+            <div class="row" style="justify-content:space-between;">
+              <div><strong>${escapeHtml(todo.id)}</strong> <span class="status-${escapeHtml(todo.status)}">[${escapeHtml(todo.status)}]</span></div>
+              <div class="row">
+                ${todo.status === 'proposed' ? `<button onclick="approveTodo('${todo.id}')">Approve</button><button onclick="rejectTodo('${todo.id}')">Reject</button>` : ''}
+                <button onclick="deleteTodo('${todo.id}')">Delete</button>
+              </div>
+            </div>
+            <div class="row" style="margin-top:8px;">
+              <input id="title-${todo.id}" type="text" value="${escapeHtmlAttr(todo.title)}">
+              <select id="priority-${todo.id}">
+                ${['low','medium','high'].map(priority => `<option value="${priority}" ${todo.priority === priority ? 'selected' : ''}>${priority}</option>`).join('')}
+              </select>
+              <select id="status-${todo.id}">
+                ${['open','in_progress','blocked','done','dropped'].map(status => `<option value="${status}" ${todo.status === status ? 'selected' : ''}>${status}</option>`).join('')}
+              </select>
+            </div>
+            <textarea id="notes-${todo.id}">${escapeHtml(noteValue)}</textarea>
+            <div class="row">
+              <button onclick="saveTodo('${todo.id}')">Save</button>
+              ${todo.status !== 'proposed' ? `<button onclick="setStatus('${todo.id}')">Set status</button>` : ''}
+            </div>
+            ${todo.proposalReason ? `<div class="muted">Reason: ${escapeHtml(todo.proposalReason)}</div>` : ''}
+          </div>
+        `;
+      }
+
+      async function createTodo() {
+        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos`, {
+          method: 'POST',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({
+            title: document.getElementById('newTitle').value,
+            priority: document.getElementById('newPriority').value,
+            notes: document.getElementById('newNotes').value,
+          }),
+        });
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
+      async function saveTodo(todoId) {
+        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}`, {
+          method: 'PATCH',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({
+            title: document.getElementById(`title-${todoId}`).value,
+            priority: document.getElementById(`priority-${todoId}`).value,
+            notes: document.getElementById(`notes-${todoId}`).value,
+          }),
+        });
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
+      async function setStatus(todoId) {
+        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/status`, {
+          method: 'POST',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({status: document.getElementById(`status-${todoId}`).value}),
+        });
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
+      async function approveTodo(todoId) {
+        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/approve`, {method: 'POST'});
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
+      async function rejectTodo(todoId) {
+        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}/reject`, {method: 'POST'});
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
+      async function deleteTodo(todoId) {
+        await fetch(`/api/lanes/${encodeURIComponent(selectedLaneId)}/todos/${encodeURIComponent(todoId)}`, {method: 'DELETE'});
+        await refresh();
+        await loadLane(selectedLaneId);
+      }
+
+      function escapeHtml(value) {
+        return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      }
+
+      function escapeHtmlAttr(value) {
+        return escapeHtml(value).replaceAll('"', '&quot;');
+      }
+
+      refresh();
+    </script>
+  </body>
+</html>

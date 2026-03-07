@@ -37,6 +37,7 @@ import {
   saveLaneRuntimeState,
   saveLaneTodoFile,
 } from "./imperative-shell/lane-store.js";
+import {serveDashboard} from "./imperative-shell/dashboard-server.js";
 import {getPortStatus} from "./imperative-shell/network.js";
 import {ensurePiExists, launchPi} from "./imperative-shell/pi-launch.js";
 import {hasSavedPiSessionForCwd} from "./imperative-shell/pi-session-discovery.js";
@@ -103,6 +104,10 @@ type RuntimeTextOptions = JsonOption & {
   readonly text?: string;
 };
 
+type DashboardServeOptions = {
+  readonly port?: string | number;
+};
+
 export async function main(argv: ReadonlyArray<string>): Promise<number> {
   const cli = cac("pi-lane");
   cli.help();
@@ -160,6 +165,13 @@ export async function main(argv: ReadonlyArray<string>): Promise<number> {
     .option("--json", "Output JSON")
     .action(async (options: JsonOption) => {
       await runWithHandling(() => runDashboardSnapshotCommand(createCommandContext(options)));
+    });
+
+  cli
+    .command("dashboard serve", "Run the local dashboard server")
+    .option("--port <port>", "Dashboard port")
+    .action(async (options: DashboardServeOptions) => {
+      await runWithHandling(() => runDashboardServeCommand(options));
     });
 
   cli
@@ -371,6 +383,14 @@ async function runDashboardSnapshotCommand(context: CommandContext): Promise<num
     }
   }
   return 0;
+}
+
+async function runDashboardServeCommand(options: DashboardServeOptions): Promise<number> {
+  const port = options.port === undefined ? 4310 : parsePortOption(options.port);
+  await serveDashboard({rootPath: process.cwd(), port});
+  return await new Promise<number>(() => {
+    // Keep process alive until terminated.
+  });
 }
 
 async function runDoctorCommand(context: CommandContext): Promise<number> {

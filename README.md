@@ -54,6 +54,7 @@ Implemented now:
 - `pi-lane list [--json]`
 - `pi-lane show <lane-id> [--json]`
 - `pi-lane dashboard snapshot [--json]`
+- `pi-lane dashboard serve [--port 4310]`
 - `pi-lane todo list <lane-id> [--json]`
 - `pi-lane todo add <lane-id> --title ... [--json]`
 - `pi-lane todo edit <lane-id> <todo-id> ... [--json]`
@@ -96,6 +97,8 @@ Implemented now:
    - `node bin/pi-lane.mjs dashboard snapshot --json`
    - `node bin/pi-lane.mjs todo list <lane-id> --json`
    - `node bin/pi-lane.mjs doctor --json`
+8. Run the local dashboard:
+   - `node bin/pi-lane.mjs dashboard serve --port 4310`
 
 ## Included pi workflow scaffolding
 
@@ -110,4 +113,4 @@ These are now wired into the repo and the lane startup flow. The extension is st
 
 ## Next step
 
-Expand the lane extension with richer runtime update tools and commands, then build the dashboard against the shared JSON interfaces and runtime files.
+Add dashboard support for runtime-state editing, then tighten live session control between the dashboard and running pi lane sessions.
