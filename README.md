@@ -105,8 +105,10 @@ Implemented now:
 
 The dashboard currently supports:
 - lane list and detail views
+- live lane health and idle/busy state
 - lane context editing
 - live message delivery into active lane sessions
+- recent lane event history
 - TODO add/edit/delete
 - TODO approve/reject
 - TODO status changes

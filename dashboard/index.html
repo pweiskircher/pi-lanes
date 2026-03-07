@@ -25,7 +25,9 @@
       .panel { border: 1px solid #374151; border-radius: 10px; padding: 12px; background:#0f172a; margin-bottom: 14px; }
       .status-proposed { color: #fbbf24; }
       .status-live { color: #34d399; }
+      .status-busy { color: #f59e0b; }
       .status-open { color: #93c5fd; }
+      .event { border-top: 1px solid #374151; padding: 8px 0; }
       .status-in_progress { color: #a78bfa; }
       .status-blocked { color: #f87171; }
       .status-done { color: #34d399; }
@@ -77,7 +79,7 @@
               <span class="pill">repo ${escapeHtml(shortRepo(lane.lane.repoPath))}</span>
               <span class="pill">open ${lane.todoCounts.open}</span>
               <span class="pill">proposed ${lane.todoCounts.proposed}</span>
-              ${lane.runtimeState?.messageBridge ? '<span class="pill status-live">live</span>' : ''}
+              ${lane.liveSessionHealth?.ok ? `<span class="pill ${lane.liveSessionHealth.isIdle ? 'status-live' : 'status-busy'}">${lane.liveSessionHealth.isIdle ? 'idle' : 'busy'}</span>` : ''}
             </div>
           `;
           card.addEventListener('click', () => loadLane(lane.lane.id));
@@ -106,6 +108,8 @@
               <div class="panel"><strong>Mode</strong><div>${escapeHtml(runtime.mode || 'stopped')}</div></div>
               <div class="panel"><strong>Current TODO</strong><div>${escapeHtml(runtime.currentTodoId || '—')}</div></div>
               <div class="panel"><strong>Live bridge</strong><div>${runtime.messageBridge ? `127.0.0.1:${escapeHtml(String(runtime.messageBridge.port))}` : 'offline'}</div></div>
+              <div class="panel"><strong>Health</strong><div>${detail.liveSessionHealth?.ok ? (detail.liveSessionHealth.isIdle ? 'idle' : 'busy') : 'offline'}</div></div>
+              <div class="panel"><strong>Last activity</strong><div>${escapeHtml(formatTimestamp(detail.liveSessionHealth?.lastActivityAt))}</div></div>
             </div>
           </div>
 
@@ -149,7 +153,12 @@
               <button onclick="sendLaneMessage()" ${runtime.messageBridge ? '' : 'disabled'}>Send</button>
             </div>
             <textarea id="laneMessageText" placeholder="Send a message into the active pi lane session" ${runtime.messageBridge ? '' : 'disabled'}></textarea>
-            <div class="muted">${runtime.messageBridge ? 'This lane has a live bridge.' : 'This lane is offline or was not started with the lane bridge.'}</div>
+            <div class="muted">${detail.liveSessionHealth?.ok ? `Lane is ${detail.liveSessionHealth.isIdle ? 'idle' : 'busy'}${detail.liveSessionHealth.lastEventSummary ? ` — ${escapeHtml(detail.liveSessionHealth.lastEventSummary)}` : ''}` : 'This lane is offline or was not started with the lane bridge.'}</div>
+          </div>
+
+          <div class="panel">
+            <h3>Recent events</h3>
+            ${(detail.recentEvents || []).length > 0 ? detail.recentEvents.map(renderEvent).join('') : '<div class="muted">No recent events.</div>'}
           </div>
 
           <div class="panel">
@@ -169,6 +178,19 @@
           <div class="panel">
             <h3>TODOs</h3>
             ${detail.todos.map(renderTodo).join('') || '<div class="muted">No TODOs.</div>'}
+          </div>
+        `;
+      }
+
+      function renderEvent(event) {
+        return `
+          <div class="event">
+            <div class="row" style="justify-content:space-between;">
+              <strong>${escapeHtml(event.kind)}</strong>
+              <span class="muted">${escapeHtml(formatTimestamp(event.timestamp))}</span>
+            </div>
+            <div>${escapeHtml(event.summary)}</div>
+            ${event.details ? `<div class="muted">${escapeHtml(event.details)}</div>` : ''}
           </div>
         `;
       }
@@ -313,6 +335,13 @@
       function shortRepo(value) {
         const parts = String(value).split('/').filter(Boolean);
         return parts.slice(-2).join('/') || value;
+      }
+
+      function formatTimestamp(value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString();
       }
 
       function escapeHtml(value) {

@@ -3,6 +3,9 @@
 import type {
   Lane,
   LaneRegistry,
+  LaneEvent,
+  LaneEventKind,
+  LaneEventLog,
   LaneRuntimeMode,
   LaneRuntimeState,
   LaneStatus,
@@ -26,6 +29,7 @@ const todoStatuses = new Set<TodoStatus>(["proposed", "open", "in_progress", "bl
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
 const todoCreators = new Set<TodoCreatedBy>(["human", "llm"]);
 const runtimeModes = new Set<LaneRuntimeMode>(["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]);
+const laneEventKinds = new Set<LaneEventKind>(["session_start", "session_shutdown", "agent_start", "agent_end", "turn_end", "input", "dashboard_message", "todo_proposed", "status"]);
 
 export function parseLaneRegistry(input: unknown): ValidationResult<LaneRegistry> {
   if (!Array.isArray(input)) {
@@ -130,6 +134,30 @@ export function parseLaneRuntimeState(input: unknown): ValidationResult<LaneRunt
   };
 }
 
+export function parseLaneEventLog(input: unknown): ValidationResult<LaneEventLog> {
+  const issues: Array<ValidationIssue> = [];
+  const objectValue = readObject(input, "$", issues);
+  if (!objectValue) {
+    return failure(issues);
+  }
+
+  const laneId = readLaneId(objectValue.laneId, "$.laneId", issues);
+  const eventsValue = objectValue.events;
+  if (!Array.isArray(eventsValue)) {
+    issues.push({path: "$.events", message: "expected an array"});
+  }
+
+  const events = Array.isArray(eventsValue)
+    ? eventsValue.map((value, index) => parseLaneEvent(value, `$.events[${index}]`, issues)).filter(isDefined)
+    : [];
+
+  if (issues.length > 0 || laneId === null) {
+    return failure(issues);
+  }
+
+  return {success: true, data: {laneId, events}};
+}
+
 function parseLane(input: unknown, path: string, issues: Array<ValidationIssue>): Lane | null {
   const objectValue = readObject(input, path, issues);
   if (!objectValue) {
@@ -163,6 +191,24 @@ function parseLane(input: unknown, path: string, issues: Array<ValidationIssue>)
     notes,
     tags,
   };
+}
+
+function parseLaneEvent(input: unknown, path: string, issues: Array<ValidationIssue>): LaneEvent | null {
+  const objectValue = readObject(input, path, issues);
+  if (!objectValue) {
+    return null;
+  }
+
+  const timestamp = readRequiredIsoDate(objectValue.timestamp, `${path}.timestamp`, issues);
+  const kind = readEnum(objectValue.kind, `${path}.kind`, laneEventKinds, issues);
+  const summary = readNonEmptyString(objectValue.summary, `${path}.summary`, issues);
+  const details = readOptionalString(objectValue.details, `${path}.details`, issues);
+
+  if (timestamp === null || kind === null || summary === null) {
+    return null;
+  }
+
+  return {timestamp, kind, summary, details};
 }
 
 function parseLaneTodo(input: unknown, path: string, issues: Array<ValidationIssue>): LaneTodo | null {

@@ -48,6 +48,29 @@ export type LaneRuntimeMessageBridge = {
   readonly authToken: string;
 };
 
+export type LaneEventKind =
+  | "session_start"
+  | "session_shutdown"
+  | "agent_start"
+  | "agent_end"
+  | "turn_end"
+  | "input"
+  | "dashboard_message"
+  | "todo_proposed"
+  | "status";
+
+export type LaneEvent = {
+  readonly timestamp: string;
+  readonly kind: LaneEventKind;
+  readonly summary: string;
+  readonly details: string | null;
+};
+
+export type LaneEventLog = {
+  readonly laneId: string;
+  readonly events: ReadonlyArray<LaneEvent>;
+};
+
 export type LaneRuntimeState = {
   readonly laneId: string;
   readonly isActive: boolean;

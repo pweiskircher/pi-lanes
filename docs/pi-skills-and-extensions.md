@@ -103,6 +103,8 @@ The dashboard now complements those commands with HTTP-based editing for:
 - runtime mode
 - lane TODO CRUD and review actions
 - live message delivery into active lane sessions
+- live idle/busy session health
+- recent lane event history
 
 ## Suggested priority
 

@@ -4,8 +4,8 @@ import {access, mkdir} from "node:fs/promises";
 import {constants as fsConstants} from "node:fs";
 import {homedir} from "node:os";
 import {resolve} from "node:path";
-import {parseLaneRegistry, parseLaneRuntimeState, parseLaneTodoFile} from "../functional-core/validate-lane-data.js";
-import type {Lane, LaneRegistry, LaneRuntimeState, LaneTodoFile} from "../types.js";
+import {parseLaneEventLog, parseLaneRegistry, parseLaneRuntimeState, parseLaneTodoFile} from "../functional-core/validate-lane-data.js";
+import type {Lane, LaneEventLog, LaneRegistry, LaneRuntimeState, LaneTodoFile} from "../types.js";
 import {readJsonFile, writeJsonFile} from "./json-files.js";
 
 export type LanePaths = {
@@ -15,6 +15,7 @@ export type LanePaths = {
   readonly runtimeDirectoryPath: string;
   readonly todosDirectoryPath: string;
   readonly contextDirectoryPath: string;
+  readonly eventsDirectoryPath: string;
 };
 
 export async function ensureLaneHome(paths: LanePaths): Promise<void> {
@@ -22,6 +23,7 @@ export async function ensureLaneHome(paths: LanePaths): Promise<void> {
   await mkdir(paths.runtimeDirectoryPath, {recursive: true});
   await mkdir(paths.todosDirectoryPath, {recursive: true});
   await mkdir(paths.contextDirectoryPath, {recursive: true});
+  await mkdir(paths.eventsDirectoryPath, {recursive: true});
 
   try {
     await access(paths.configPath, fsConstants.F_OK);
@@ -108,6 +110,27 @@ export async function saveLaneRuntimeState(paths: LanePaths, runtimeState: LaneR
   await writeJsonFile(getLaneRuntimePath(paths, runtimeState.laneId), runtimeState);
 }
 
+export async function loadLaneEventLog(paths: LanePaths, laneId: string): Promise<LaneEventLog> {
+  const eventPath = getLaneEventPath(paths, laneId);
+  try {
+    const parsed = parseLaneEventLog(await readJsonFile(eventPath));
+    if (!parsed.success) {
+      throw new Error(formatIssues(`invalid lane event log at ${eventPath}`, parsed.issues));
+    }
+    return parsed.data;
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return {laneId, events: []};
+    }
+    throw error;
+  }
+}
+
+export async function saveLaneEventLog(paths: LanePaths, eventLog: LaneEventLog): Promise<void> {
+  await ensureLaneHome(paths);
+  await writeJsonFile(getLaneEventPath(paths, eventLog.laneId), eventLog);
+}
+
 export function getDefaultLanePaths(rootPath = getDefaultLaneHome()): LanePaths {
   return {
     rootPath,
@@ -116,6 +139,7 @@ export function getDefaultLanePaths(rootPath = getDefaultLaneHome()): LanePaths 
     runtimeDirectoryPath: resolve(rootPath, "state/runtime"),
     todosDirectoryPath: resolve(rootPath, "state/todos"),
     contextDirectoryPath: resolve(rootPath, "context"),
+    eventsDirectoryPath: resolve(rootPath, "state/events"),
   };
 }
 
@@ -129,6 +153,10 @@ export function getLaneRuntimePath(paths: LanePaths, laneId: string): string {
 
 export function getLaneContextPath(paths: LanePaths, laneId: string): string {
   return resolve(paths.contextDirectoryPath, `${laneId}.md`);
+}
+
+export function getLaneEventPath(paths: LanePaths, laneId: string): string {
+  return resolve(paths.eventsDirectoryPath, `${laneId}.json`);
 }
 
 export function getDefaultLaneHome(): string {

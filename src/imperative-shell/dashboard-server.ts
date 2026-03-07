@@ -17,6 +17,7 @@ import {
   getDefaultLanePaths,
   getLaneById,
   getLaneContextPath,
+  loadLaneEventLog,
   loadLaneRegistry,
   loadLaneRuntimeState,
   loadLaneTodoFile,
@@ -215,10 +216,14 @@ async function buildLaneDetail(paths: ReturnType<typeof getDefaultLanePaths>, la
   const todoFile = await loadLaneTodoFile(paths, laneId);
   const runtimeState = await loadOrCreateRuntimeState(paths, lane);
   const contextText = await readLaneContextText(paths, laneId);
+  const eventLog = await loadLaneEventLog(paths, laneId);
+  const liveSessionHealth = await readLiveSessionHealth(runtimeState);
   return {
     lane,
     runtimeState,
+    liveSessionHealth,
     contextText,
+    recentEvents: eventLog.events.slice().reverse(),
     todos: todoFile.todos,
     groupedTodos: groupTodos(todoFile.todos),
     todoCounts: countTodos(todoFile.todos),
@@ -238,6 +243,40 @@ async function readLaneContextText(paths: ReturnType<typeof getDefaultLanePaths>
       return "";
     }
     throw error;
+  }
+}
+
+async function readLiveSessionHealth(runtimeState: LaneRuntimeState): Promise<{
+  readonly ok: boolean;
+  readonly isIdle: boolean;
+  readonly lastActivityAt: string | null;
+  readonly lastEventSummary: string | null;
+}> {
+  if (!runtimeState.messageBridge) {
+    return {ok: false, isIdle: true, lastActivityAt: null, lastEventSummary: null};
+  }
+
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), 500);
+  try {
+    const response = await fetch(`http://127.0.0.1:${runtimeState.messageBridge.port}/health`, {
+      headers: {authorization: `Bearer ${runtimeState.messageBridge.authToken}`},
+      signal: abortController.signal,
+    });
+    if (!response.ok) {
+      return {ok: false, isIdle: true, lastActivityAt: null, lastEventSummary: null};
+    }
+    const json = (await response.json()) as Record<string, unknown>;
+    return {
+      ok: json.ok === true,
+      isIdle: json.isIdle !== false,
+      lastActivityAt: typeof json.lastActivityAt === "string" ? json.lastActivityAt : null,
+      lastEventSummary: typeof json.lastEventSummary === "string" ? json.lastEventSummary : null,
+    };
+  } catch {
+    return {ok: false, isIdle: true, lastActivityAt: null, lastEventSummary: null};
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
