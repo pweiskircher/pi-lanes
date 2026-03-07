@@ -1,6 +1,6 @@
 // pattern: Imperative Shell
 
-import {access, mkdir} from "node:fs/promises";
+import {access, mkdir, rm} from "node:fs/promises";
 import {constants as fsConstants} from "node:fs";
 import {homedir} from "node:os";
 import {resolve} from "node:path";
@@ -12,18 +12,12 @@ export type LanePaths = {
   readonly rootPath: string;
   readonly configPath: string;
   readonly settingsPath: string;
-  readonly runtimeDirectoryPath: string;
-  readonly todosDirectoryPath: string;
-  readonly contextDirectoryPath: string;
-  readonly eventsDirectoryPath: string;
+  readonly lanesDirectoryPath: string;
 };
 
 export async function ensureLaneHome(paths: LanePaths): Promise<void> {
   await mkdir(paths.rootPath, {recursive: true});
-  await mkdir(paths.runtimeDirectoryPath, {recursive: true});
-  await mkdir(paths.todosDirectoryPath, {recursive: true});
-  await mkdir(paths.contextDirectoryPath, {recursive: true});
-  await mkdir(paths.eventsDirectoryPath, {recursive: true});
+  await mkdir(paths.lanesDirectoryPath, {recursive: true});
 
   try {
     await access(paths.configPath, fsConstants.F_OK);
@@ -50,6 +44,10 @@ export async function loadLaneRegistry(paths: LanePaths): Promise<LaneRegistry> 
 export async function saveLaneRegistry(paths: LanePaths, lanes: LaneRegistry): Promise<void> {
   await ensureLaneHome(paths);
   await writeJsonFile(paths.configPath, lanes);
+}
+
+export async function deleteLaneFiles(paths: LanePaths, laneId: string): Promise<void> {
+  await rm(getLaneDirectoryPath(paths, laneId), {recursive: true, force: true});
 }
 
 export function getLaneById(lanes: LaneRegistry, laneId: string): Lane {
@@ -143,27 +141,28 @@ export function getDefaultLanePaths(rootPath = getDefaultLaneHome()): LanePaths 
     rootPath,
     configPath: resolve(rootPath, "lanes.json"),
     settingsPath: resolve(rootPath, "settings.json"),
-    runtimeDirectoryPath: resolve(rootPath, "state/runtime"),
-    todosDirectoryPath: resolve(rootPath, "state/todos"),
-    contextDirectoryPath: resolve(rootPath, "context"),
-    eventsDirectoryPath: resolve(rootPath, "state/events"),
+    lanesDirectoryPath: resolve(rootPath, "lanes"),
   };
 }
 
+export function getLaneDirectoryPath(paths: LanePaths, laneId: string): string {
+  return resolve(paths.lanesDirectoryPath, laneId);
+}
+
 export function getLaneTodoPath(paths: LanePaths, laneId: string): string {
-  return resolve(paths.todosDirectoryPath, `${laneId}.json`);
+  return resolve(getLaneDirectoryPath(paths, laneId), "state/todos.json");
 }
 
 export function getLaneRuntimePath(paths: LanePaths, laneId: string): string {
-  return resolve(paths.runtimeDirectoryPath, `${laneId}.json`);
+  return resolve(getLaneDirectoryPath(paths, laneId), "state/runtime.json");
 }
 
 export function getLaneContextPath(paths: LanePaths, laneId: string): string {
-  return resolve(paths.contextDirectoryPath, `${laneId}.md`);
+  return resolve(getLaneDirectoryPath(paths, laneId), "context.md");
 }
 
 export function getLaneEventPath(paths: LanePaths, laneId: string): string {
-  return resolve(paths.eventsDirectoryPath, `${laneId}.json`);
+  return resolve(getLaneDirectoryPath(paths, laneId), "state/events.json");
 }
 
 export function getDefaultLaneHome(): string {

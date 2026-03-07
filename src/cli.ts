@@ -2,10 +2,13 @@
 
 import {existsSync} from "node:fs";
 import {spawnSync} from "node:child_process";
+import {createInterface} from "node:readline/promises";
+import {stdin as input, stdout as output} from "node:process";
 import {resolve, dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Command} from "commander";
 import {createLane} from "./functional-core/lane-registry-transitions.js";
+import {formatInitialLaneContext, needsLaneOnboarding} from "./functional-core/lane-context.js";
 import {
   approveProposedTodo,
   createHumanTodo,
@@ -25,6 +28,7 @@ import {
 } from "./functional-core/runtime-state.js";
 import {
   assertRepoExists,
+  deleteLaneFiles,
   ensureLaneHome,
   getDefaultLanePaths,
   getLaneById,
@@ -73,6 +77,7 @@ type JsonOption = {
 
 type StartOptions = JsonOption & {
   readonly dryRun?: boolean;
+  readonly continue?: boolean;
 };
 
 type NewLaneOptions = JsonOption & {
@@ -86,6 +91,10 @@ type NewLaneOptions = JsonOption & {
   readonly status?: string;
   readonly notes?: string;
   readonly tags?: string;
+};
+
+type DeleteLaneOptions = JsonOption & {
+  readonly yes?: boolean;
 };
 
 type TodoAddOptions = JsonOption & {
@@ -131,9 +140,20 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
     });
 
   program
+    .command("delete")
+    .argument("<laneId>")
+    .description("Delete a lane and all of its lane files")
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: DeleteLaneOptions) => {
+      await runWithHandling(() => runDeleteLaneCommand(laneId, createCommandContext(options), options));
+    });
+
+  program
     .command("start")
     .argument("<laneId>")
     .description("Start a lane")
+    .option("-c, --continue", "Continue an existing saved pi session for the lane repo if available")
     .option("--dry-run", "Update runtime state but do not launch pi")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: StartOptions) => {
@@ -142,9 +162,10 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
 
   program
     .command("new")
+    .argument("[laneId]")
     .description("Create a new lane")
-    .requiredOption("--id <id>", "Lane id")
-    .requiredOption("--repo <repo>", "Repository root path")
+    .option("--id <id>", "Lane id (legacy alternative to the positional laneId)")
+    .option("--repo <repo>", "Repository root path (defaults to the current working directory)")
     .option("--title <title>", "Lane title")
     .option("--bookmark <bookmark>", "jj bookmark")
     .option("--session-name <sessionName>", "pi session name")
@@ -154,8 +175,8 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
     .option("--notes <notes>", "Lane notes")
     .option("--tags <tags>", "Comma-separated tags")
     .option("--json", "Output JSON")
-    .action(async (options: NewLaneOptions) => {
-      await runWithHandling(() => runNewLaneCommand(createCommandContext(options), options));
+    .action(async (laneId: string | undefined, options: NewLaneOptions) => {
+      await runWithHandling(() => runNewLaneCommand(createCommandContext(options), laneId, options));
     });
 
   program
@@ -362,11 +383,12 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
   }
 
   await ensurePiExists();
-  const continueSession = await hasSavedPiSessionForCwd(lane.repoPath);
+  const continueSession = options.continue === true && (await hasSavedPiSessionForCwd(lane.repoPath));
   const laneContext = await readLaneContext(paths, lane.id);
+  const onboardingNeeded = needsLaneOnboarding({lane, laneContext});
   const initialMessages = continueSession
     ? []
-    : [formatLaneStartupPrompt({lane, runtimeState, todoFile, laneContext})];
+    : [formatLaneStartupPrompt({lane, runtimeState, todoFile, laneContext, needsOnboarding: onboardingNeeded})];
   const toolRoot = getToolRoot();
   const exitCode = await launchPi({
     cwd: lane.repoPath,
@@ -486,15 +508,15 @@ async function runDoctorCommand(context: CommandContext): Promise<number> {
   return report.ok ? 0 : 1;
 }
 
-async function runNewLaneCommand(context: CommandContext, options: NewLaneOptions): Promise<number> {
-  if (!options.id) {
-    throw new Error("missing required flag: --id");
-  }
-  if (!options.repo) {
-    throw new Error("missing required flag: --repo");
+async function runNewLaneCommand(context: CommandContext, laneIdArgument: string | undefined, options: NewLaneOptions): Promise<number> {
+  const laneId = laneIdArgument ?? options.id;
+  if (!laneId) {
+    throw new Error("missing lane id: pass <laneId> or --id");
   }
 
-  const laneId = options.id;
+  const repoPath = resolve(options.repo ?? process.cwd());
+  await assertRepoExists(repoPath);
+
   const paths = getDefaultLanePaths();
   await ensureLaneHome(paths);
   const lanes = await loadLaneRegistry(paths);
@@ -507,7 +529,7 @@ async function runNewLaneCommand(context: CommandContext, options: NewLaneOption
   const result = createLane(lanes, {
     id: laneId,
     title,
-    repoPath: options.repo,
+    repoPath,
     jjBookmark: options.bookmark ?? null,
     sessionName,
     serverCommand: options.serverCommand ?? null,
@@ -541,6 +563,35 @@ async function runNewLaneCommand(context: CommandContext, options: NewLaneOption
     printJson({ok: true, action: "lane.new", lane: createdLane});
   } else {
     console.log(`Created lane ${laneId}`);
+  }
+  return 0;
+}
+
+async function runDeleteLaneCommand(laneId: string, context: CommandContext, options: DeleteLaneOptions): Promise<number> {
+  if (context.outputMode === "json" && options.yes !== true) {
+    throw new Error("refusing to prompt in --json mode; pass --yes to confirm deletion");
+  }
+
+  const paths = getDefaultLanePaths();
+  const lanes = await loadLaneRegistry(paths);
+  const lane = getLaneById(lanes, laneId);
+  const confirmed = options.yes === true || await confirmLaneDeletion(laneId);
+  if (!confirmed) {
+    if (context.outputMode === "json") {
+      printJson({ok: true, action: "lane.delete", laneId, deleted: false});
+    } else {
+      console.log(`Skipped deleting lane ${laneId}`);
+    }
+    return 0;
+  }
+
+  await deleteLaneFiles(paths, laneId);
+  await saveLaneRegistry(paths, lanes.filter(candidate => candidate.id !== laneId));
+
+  if (context.outputMode === "json") {
+    printJson({ok: true, action: "lane.delete", laneId, deleted: true, lane});
+  } else {
+    console.log(`Deleted lane ${laneId}`);
   }
   return 0;
 }
@@ -985,8 +1036,7 @@ async function ensureLaneContextExists(paths: ReturnType<typeof getDefaultLanePa
   if (existsSync(contextPath)) {
     return;
   }
-  const template = `# ${lane.id}\n\nPurpose:\n- Describe what this lane is for.\n\nConstraints:\n- Add lane-specific rules, references, or reminders here.\n\nReferences:\n- Add useful links, files, or commands.\n`;
-  await writeTextFile(contextPath, template);
+  await writeTextFile(contextPath, formatInitialLaneContext(lane));
 }
 
 async function readLaneContext(paths: ReturnType<typeof getDefaultLanePaths>, laneId: string): Promise<string | null> {
@@ -1018,6 +1068,17 @@ function parseTagsOption(input: string | undefined): ReadonlyArray<string> {
     .split(",")
     .map(tag => tag.trim())
     .filter(tag => tag.length > 0);
+}
+
+async function confirmLaneDeletion(laneId: string): Promise<boolean> {
+  const readline = createInterface({input, output});
+  try {
+    const answer = await readline.question(`Delete lane ${laneId} and all of its lane files? [y/N] `);
+    const normalizedAnswer = answer.trim().toLowerCase();
+    return normalizedAnswer === "y" || normalizedAnswer === "yes";
+  } finally {
+    readline.close();
+  }
 }
 
 function printJson(value: unknown): void {

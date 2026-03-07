@@ -48,11 +48,12 @@ Repo contents:
 ## Current implementation status
 
 Implemented now:
-- `pi-lane new --id <lane-id> --repo <path> ... [--json]`
+- `pi-lane new [<lane-id>] [--repo <path>] ... [--json]`
 - `pi-lane doctor [--json]`
-- `pi-lane-start <lane-id>` via `bin/pi-lane-start.mjs`
+- `pi-lane-start <lane-id> [-c|--continue]` via `bin/pi-lane-start.mjs`
 - `pi-lane list [--json]`
 - `pi-lane show <lane-id> [--json]`
+- `pi-lane delete <lane-id> [--yes] [--json]`
 - `pi-lane dashboard snapshot [--json]`
 - `pi-lane dashboard serve [--port 4310]`
 - `pi-lane todo list <lane-id> [--json]`
@@ -81,13 +82,20 @@ Implemented now:
 1. Install dependencies:
    - `npm install`
 2. Create a lane:
-   - `node bin/pi-lane.mjs new --id mt-core --repo /path/to/repo --title 'Multithreading large subsystem' --bookmark pat/mt-core`
+   - from inside a repo: `node bin/pi-lane.mjs new mt-core`
+   - or explicitly: `node bin/pi-lane.mjs new mt-core --repo /path/to/repo`
 3. Lane data is stored in `~/.config/pi-lanes/` by default.
-4. Each lane also gets a context file at `~/.config/pi-lanes/context/<lane-id>.md` for lane-specific notes and instructions.
+4. Each lane gets its own directory under `~/.config/pi-lanes/lanes/<lane-id>/`.
+   - context: `~/.config/pi-lanes/lanes/<lane-id>/context.md`
+   - runtime: `~/.config/pi-lanes/lanes/<lane-id>/state/runtime.json`
+   - todos: `~/.config/pi-lanes/lanes/<lane-id>/state/todos.json`
+   - events: `~/.config/pi-lanes/lanes/<lane-id>/state/events.json`
 5. Run a health check:
    - `node bin/pi-lane.mjs doctor`
 6. Start a lane:
-   - `node bin/pi-lane-start.mjs <lane-id>`
+   - fresh start: `node bin/pi-lane-start.mjs <lane-id>`
+   - continue an existing saved pi session: `node bin/pi-lane-start.mjs <lane-id> --continue`
+   - on a brand-new lane, pi will use the first conversation to help onboard the lane, capture context, and optionally draft proposed TODOs.
 7. Inspect lanes:
    - `node bin/pi-lane.mjs list`
    - `node bin/pi-lane.mjs show <lane-id>`
@@ -123,7 +131,7 @@ The dashboard currently supports:
 - TODO status changes
 
 Lane-specific context works like a lightweight per-lane AGENTS-style note:
-- `~/.config/pi-lanes/context/<lane-id>.md`
+- `~/.config/pi-lanes/lanes/<lane-id>/context.md`
 - `pi-lane new` creates it automatically
 - `pi-lane-start` loads it into the startup prompt for fresh sessions
 

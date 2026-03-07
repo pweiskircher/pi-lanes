@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {mkdtemp, mkdir, writeFile} from "node:fs/promises";
+import {access, mkdtemp, mkdir, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join, resolve} from "node:path";
 import {execFile} from "node:child_process";
@@ -55,6 +55,22 @@ test("pi-lane new creates a lane that list --json can see", async () => {
   assert.equal(parsed.lanes[0].repoPath, repoPath);
 });
 
+test("pi-lane new defaults repo to the current working directory", async () => {
+  const laneHome = await createTempLaneHome();
+  const repoPath = join(laneHome, "repo");
+  await mkdir(repoPath, {recursive: true});
+
+  await execCli(laneHome, ["new", "mt-core"], {cwd: repoPath});
+
+  const result = await execCli(laneHome, ["list", "--json"]);
+  const parsed = JSON.parse(result.stdout);
+
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.lanes.length, 1);
+  assert.equal(parsed.lanes[0].id, "mt-core");
+  assert.match(parsed.lanes[0].repoPath, /\/repo$/);
+});
+
 test("pi-lane context show and edit work", async () => {
   const laneHome = await createTempLaneHome();
   const repoPath = join(laneHome, "repo");
@@ -69,11 +85,28 @@ test("pi-lane context show and edit work", async () => {
   assert.equal(parsed.ok, true);
   assert.equal(parsed.laneId, "mt-core");
   assert.match(parsed.text, /Custom context/);
+  assert.match(parsed.contextPath, /\/lanes\/mt-core\/context\.md$/);
 });
 
-async function execCli(laneHome: string, args: ReadonlyArray<string>) {
+ test("pi-lane delete removes the lane and its files", async () => {
+  const laneHome = await createTempLaneHome();
+  const repoPath = join(laneHome, "repo");
+  await mkdir(repoPath, {recursive: true});
+
+  await execCli(laneHome, ["new", "mt-core", "--repo", repoPath]);
+  await execCli(laneHome, ["delete", "mt-core", "--yes"]);
+
+  const result = await execCli(laneHome, ["list", "--json"]);
+  const parsed = JSON.parse(result.stdout);
+
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.lanes.length, 0);
+  await assert.rejects(access(join(laneHome, "lanes", "mt-core", "context.md")));
+});
+
+async function execCli(laneHome: string, args: ReadonlyArray<string>, options?: {readonly cwd?: string}) {
   return await execFileAsync("node", [cliPath, ...args], {
-    cwd: repoRoot,
+    cwd: options?.cwd ?? repoRoot,
     env: {
       ...process.env,
       PI_LANES_HOME: laneHome,
@@ -83,9 +116,7 @@ async function execCli(laneHome: string, args: ReadonlyArray<string>) {
 
 async function createTempLaneHome(): Promise<string> {
   const laneHome = await mkdtemp(join(tmpdir(), "pi-lanes-home-"));
-  await mkdir(join(laneHome, "state", "runtime"), {recursive: true});
-  await mkdir(join(laneHome, "state", "todos"), {recursive: true});
-  await mkdir(join(laneHome, "context"), {recursive: true});
+  await mkdir(join(laneHome, "lanes"), {recursive: true});
   await writeFile(join(laneHome, "lanes.json"), "[]\n", "utf8");
   return laneHome;
 }

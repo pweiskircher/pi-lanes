@@ -23,9 +23,9 @@ A lane is the unit of work. The lane's metadata, TODOs, runtime state, and lane 
 Before doing lane-aware work, read these files when they exist:
 
 1. `~/.config/pi-lanes/lanes.json`
-2. `~/.config/pi-lanes/state/runtime/<lane-id>.json`
-3. `~/.config/pi-lanes/state/todos/<lane-id>.json`
-4. `~/.config/pi-lanes/context/<lane-id>.md`
+2. `~/.config/pi-lanes/lanes/<lane-id>/state/runtime.json`
+3. `~/.config/pi-lanes/lanes/<lane-id>/state/todos.json`
+4. `~/.config/pi-lanes/lanes/<lane-id>/context.md`
 
 If the lane id is unclear, ask the user or infer it from the active lane session and lane briefing.
 

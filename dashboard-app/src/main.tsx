@@ -4,7 +4,6 @@ import {
   approveTodo,
   createTodo,
   deleteTodo,
-  fetchLane,
   fetchLaneLiveOutput,
   fetchSnapshot,
   rejectTodo,
@@ -142,8 +141,8 @@ function App() {
       return;
     }
 
-    const laneExists = snapshot.lanes.some(lane => lane.lane.id === selectedLaneId);
-    if (!laneExists) {
+    const selectedLaneSnapshot = snapshot.lanes.find(lane => lane.lane.id === selectedLaneId) ?? null;
+    if (!selectedLaneSnapshot) {
       setSelectedLaneId(null);
       saveSelectedLaneId(null);
       setSelectedLane(null);
@@ -152,28 +151,27 @@ function App() {
       return;
     }
 
-    const laneResponse = await fetchLane(selectedLaneId);
-    setSelectedLane(laneResponse.lane);
+    setSelectedLane(selectedLaneSnapshot);
   }
 
   async function selectLane(laneId: string): Promise<void> {
     setSelectedLaneId(laneId);
     saveSelectedLaneId(laneId);
-    const laneResponse = await fetchLane(laneId);
-    setSelectedLane(laneResponse.lane);
-    setUiState({activeTab: "chat", messageText: "", messageMode: "steer", contextText: laneResponse.lane.contextText});
+    const laneSnapshot = lanes.find(lane => lane.lane.id === laneId) ?? null;
+    setSelectedLane(laneSnapshot);
+    setUiState({activeTab: "chat", messageText: "", messageMode: "steer", contextText: laneSnapshot?.contextText ?? ""});
   }
 
   async function handleSaveContext(): Promise<void> {
     if (!selectedLane) return;
     const response = await saveLaneContext(selectedLane.lane.id, uiState.contextText);
-    setSelectedLane(response.lane);
+    applyLaneUpdate(response.lane);
   }
 
   async function handleSendMessage(): Promise<void> {
     if (!selectedLane || uiState.messageText.trim().length === 0) return;
     const response = await sendLaneMessage(selectedLane.lane.id, uiState.messageText, uiState.messageMode);
-    setSelectedLane(response.lane);
+    applyLaneUpdate(response.lane);
     setUiState(state => ({...state, messageText: ""}));
     requestAnimationFrame(() => {
       const element = conversationRef.current;
@@ -192,7 +190,7 @@ function App() {
   async function handleCreateTodo(): Promise<void> {
     if (!selectedLane || newTodo.title.trim().length === 0) return;
     const response = await createTodo(selectedLane.lane.id, newTodo);
-    setSelectedLane(response.lane);
+    applyLaneUpdate(response.lane);
     setNewTodo({title: "", priority: "medium", notes: ""});
   }
 
@@ -201,34 +199,39 @@ function App() {
     const draft = todoDrafts[todoId];
     if (!draft) return;
     const response = await updateTodo(selectedLane.lane.id, todoId, draft);
-    setSelectedLane(response.lane);
+    applyLaneUpdate(response.lane);
   }
 
   async function handleStatusChange(todoId: string, status: string): Promise<void> {
     if (!selectedLane) return;
     const response = await setTodoStatus(selectedLane.lane.id, todoId, status);
-    setSelectedLane(response.lane);
+    applyLaneUpdate(response.lane);
   }
 
   async function handleApproveTodo(todoId: string): Promise<void> {
     if (!selectedLane) return;
     const response = await approveTodo(selectedLane.lane.id, todoId);
-    setSelectedLane(response.lane);
+    applyLaneUpdate(response.lane);
   }
 
   async function handleRejectTodo(todoId: string): Promise<void> {
     if (!selectedLane) return;
     const response = await rejectTodo(selectedLane.lane.id, todoId);
-    setSelectedLane(response.lane);
+    applyLaneUpdate(response.lane);
   }
 
   async function handleDeleteTodo(todoId: string): Promise<void> {
     if (!selectedLane) return;
     const response = await deleteTodo(selectedLane.lane.id, todoId);
-    setSelectedLane(response.lane);
+    applyLaneUpdate(response.lane);
   }
 
   const todoGroups = selectedLane ? groupTodosByStatus(selectedLane.todos) : null;
+
+  function applyLaneUpdate(updatedLane: LaneSnapshot): void {
+    setSelectedLane(currentSelectedLane => currentSelectedLane?.lane.id === updatedLane.lane.id ? updatedLane : currentSelectedLane);
+    setLanes(currentLanes => currentLanes.map(lane => lane.lane.id === updatedLane.lane.id ? updatedLane : lane));
+  }
 
   return (
     <main class="app-shell">
