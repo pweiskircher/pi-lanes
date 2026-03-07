@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/lane-runtime.schema.json",
+  "title": "Lane runtime state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "laneId",
+    "isActive",
+    "updatedAt",
+    "sessionName",
+    "workspacePath",
+    "port",
+    "mode"
+  ],
+  "properties": {
+    "laneId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "isActive": {
+      "type": "boolean"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sessionName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspacePath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]
+    },
+    "currentTodoId": {
+      "type": "string",
+      "pattern": "^todo-[a-z0-9]+$"
+    },
+    "currentSummary": {
+      "type": "string"
+    },
+    "pendingQuestion": {
+      "type": "string"
+    },
+    "lastHumanInstruction": {
+      "type": "string"
+    }
+  }
+}

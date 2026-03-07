@@ -1,0 +1,28 @@
+[
+  {
+    "id": "mt-core",
+    "title": "Multithreading large subsystem",
+    "workspacePath": "/Users/pat/Work/project/workspaces/mt-core",
+    "repoPath": "/Users/pat/Work/project",
+    "jjBookmark": "pat/mt-core",
+    "port": 3001,
+    "sessionName": "mt-core",
+    "serverCommand": "pnpm dev --port 3001",
+    "priority": "main",
+    "status": "active",
+    "tags": ["rendering", "performance"]
+  },
+  {
+    "id": "pdfua-paragraphs",
+    "title": "PDF/UA paragraph detection",
+    "workspacePath": "/Users/pat/Work/project/workspaces/pdfua-paragraphs",
+    "repoPath": "/Users/pat/Work/project",
+    "jjBookmark": "pat/pdfua-paragraphs",
+    "port": 3002,
+    "sessionName": "pdfua-paragraphs",
+    "serverCommand": "pnpm dev --port 3002",
+    "priority": "main",
+    "status": "active",
+    "tags": ["pdfua", "heuristics"]
+  }
+]

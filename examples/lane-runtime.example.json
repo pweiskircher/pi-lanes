@@ -1,0 +1,15 @@
+{
+  "laneId": "pdfua-paragraphs",
+  "isActive": true,
+  "startedAt": "2026-03-07T14:10:00Z",
+  "updatedAt": "2026-03-07T14:12:00Z",
+  "sessionName": "pdfua-paragraphs",
+  "sessionId": "abc12345",
+  "workspacePath": "/Users/pat/Work/project/workspaces/pdfua-paragraphs",
+  "port": 3002,
+  "mode": "working",
+  "currentTodoId": "todo-001",
+  "currentSummary": "Compared 2 tagged samples. Hybrid heuristic looks better on one malformed document.",
+  "pendingQuestion": "Prefer visual consistency over strict tag fidelity when producers disagree?",
+  "lastHumanInstruction": "Start TODO todo-001 and stop if you need a design decision."
+}

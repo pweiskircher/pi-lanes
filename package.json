@@ -1,0 +1,10 @@
+{
+  "name": "pi-lanes",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Lane-oriented workflow scaffolding for pi",
+  "type": "module",
+  "scripts": {
+    "check": "echo 'No automated checks yet'"
+  }
+}
