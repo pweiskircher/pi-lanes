@@ -33,7 +33,7 @@ export async function ensurePiExists(): Promise<void> {
 }
 
 export async function launchPi(options: LaunchPiOptions): Promise<number> {
-  const args = options.continueSession ? ["-c"] : [];
+  const args = options.continueSession ? ["-c", "--session-control"] : ["--session-control"];
 
   for (const extensionPath of options.extensionPaths) {
     args.push("--extension", extensionPath);

@@ -28,6 +28,11 @@
       .status-busy { color: #f59e0b; }
       .status-open { color: #93c5fd; }
       .event { border-top: 1px solid #374151; padding: 8px 0; }
+      .message { border-top: 1px solid #374151; padding: 10px 0; }
+      .message-role { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; }
+      .message.user .message-body { border-left: 3px solid #60a5fa; padding-left: 10px; }
+      .message.assistant .message-body { border-left: 3px solid #34d399; padding-left: 10px; }
+      .message-body { white-space: pre-wrap; margin-top: 6px; }
       .status-in_progress { color: #a78bfa; }
       .status-blocked { color: #f87171; }
       .status-done { color: #34d399; }
@@ -143,6 +148,11 @@
           </div>
 
           <div class="panel">
+            <h3>Recent conversation</h3>
+            ${(detail.liveSession?.recentMessages || []).length > 0 ? detail.liveSession.recentMessages.map(renderMessage).join('') : '<div class="muted">No recent session messages found.</div>'}
+          </div>
+
+          <div class="panel">
             <h3>Recent events</h3>
             ${(detail.recentEvents || []).length > 0 ? detail.recentEvents.map(renderEvent).join('') : '<div class="muted">No recent events.</div>'}
           </div>
@@ -164,6 +174,18 @@
           <div class="panel">
             <h3>TODOs</h3>
             ${detail.todos.map(renderTodo).join('') || '<div class="muted">No TODOs.</div>'}
+          </div>
+        `;
+      }
+
+      function renderMessage(message) {
+        return `
+          <div class="message ${escapeHtml(message.role)}">
+            <div class="row" style="justify-content:space-between;">
+              <div class="message-role">${escapeHtml(message.role)}</div>
+              <span class="muted">${escapeHtml(formatTimestamp(message.timestamp))}</span>
+            </div>
+            <div class="message-body">${escapeHtml(message.content)}</div>
           </div>
         `;
       }

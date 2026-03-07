@@ -22,6 +22,7 @@ import {
   saveLaneTodoFile,
 } from "./lane-store.js";
 import {readTextFile, writeTextFile} from "./json-files.js";
+import {findLaneControlledSession} from "./pi-session-control.js";
 import type {Lane, LaneRuntimeState, LaneTodo, TodoPriority, TodoStatus} from "../types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
@@ -203,10 +204,12 @@ async function buildLaneDetail(paths: ReturnType<typeof getDefaultLanePaths>, la
   const runtimeState = await loadOrCreateRuntimeState(paths, lane);
   const contextText = await readLaneContextText(paths, laneId);
   const eventLog = await loadLaneEventLog(paths, laneId);
-  const liveSessionHealth = await readLiveSessionHealth(runtimeState);
+  const liveSession = await findLaneControlledSession(lane);
+  const liveSessionHealth = await readLiveSessionHealth(runtimeState, liveSession);
   return {
     lane,
     runtimeState,
+    liveSession,
     liveSessionHealth,
     contextText,
     recentEvents: eventLog.events.slice().reverse(),
@@ -232,38 +235,45 @@ async function readLaneContextText(paths: ReturnType<typeof getDefaultLanePaths>
   }
 }
 
-async function readLiveSessionHealth(runtimeState: LaneRuntimeState): Promise<{
+async function readLiveSessionHealth(
+  runtimeState: LaneRuntimeState,
+  liveSession: Awaited<ReturnType<typeof findLaneControlledSession>>,
+): Promise<{
   readonly ok: boolean;
   readonly isIdle: boolean;
   readonly lastActivityAt: string | null;
   readonly lastEventSummary: string | null;
 }> {
-  if (!runtimeState.messageBridge) {
-    return {ok: false, isIdle: true, lastActivityAt: null, lastEventSummary: null};
+  if (runtimeState.messageBridge) {
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), 500);
+    try {
+      const response = await fetch(`http://127.0.0.1:${runtimeState.messageBridge.port}/health`, {
+        headers: {authorization: `Bearer ${runtimeState.messageBridge.authToken}`},
+        signal: abortController.signal,
+      });
+      if (response.ok) {
+        const json = (await response.json()) as Record<string, unknown>;
+        return {
+          ok: json.ok === true,
+          isIdle: json.isIdle !== false,
+          lastActivityAt: typeof json.lastActivityAt === "string" ? json.lastActivityAt : null,
+          lastEventSummary: typeof json.lastEventSummary === "string" ? json.lastEventSummary : null,
+        };
+      }
+    } catch {
+      // Fall through to session-file-derived health.
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  const abortController = new AbortController();
-  const timeout = setTimeout(() => abortController.abort(), 500);
-  try {
-    const response = await fetch(`http://127.0.0.1:${runtimeState.messageBridge.port}/health`, {
-      headers: {authorization: `Bearer ${runtimeState.messageBridge.authToken}`},
-      signal: abortController.signal,
-    });
-    if (!response.ok) {
-      return {ok: false, isIdle: true, lastActivityAt: null, lastEventSummary: null};
-    }
-    const json = (await response.json()) as Record<string, unknown>;
-    return {
-      ok: json.ok === true,
-      isIdle: json.isIdle !== false,
-      lastActivityAt: typeof json.lastActivityAt === "string" ? json.lastActivityAt : null,
-      lastEventSummary: typeof json.lastEventSummary === "string" ? json.lastEventSummary : null,
-    };
-  } catch {
-    return {ok: false, isIdle: true, lastActivityAt: null, lastEventSummary: null};
-  } finally {
-    clearTimeout(timeout);
-  }
+  return {
+    ok: liveSession !== null,
+    isIdle: liveSession?.isIdle !== false,
+    lastActivityAt: liveSession?.recentMessages[liveSession.recentMessages.length - 1]?.timestamp ?? null,
+    lastEventSummary: liveSession?.lastAssistant ?? liveSession?.lastUser ?? null,
+  };
 }
 
 function countTodos(todos: ReadonlyArray<LaneTodo>) {
