@@ -97,7 +97,8 @@ Implemented now:
    - `node bin/pi-lane.mjs dashboard snapshot --json`
    - `node bin/pi-lane.mjs todo list <lane-id> --json`
    - `node bin/pi-lane.mjs doctor --json`
-9. Run the local dashboard:
+9. Build and run the local dashboard:
+   - `npm run dashboard:build`
    - `node bin/pi-lane.mjs dashboard serve --port 4310`
 
 The dashboard currently supports:

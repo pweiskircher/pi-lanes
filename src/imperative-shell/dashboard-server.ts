@@ -2,7 +2,7 @@
 
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
 import {readFile} from "node:fs/promises";
-import {resolve} from "node:path";
+import {extname, resolve} from "node:path";
 import {approveProposedTodo, createHumanTodo, deleteTodo, editTodo, rejectProposedTodo, setTodoStatus} from "../functional-core/todo-transitions.js";
 import {
   createStartedRuntimeState,
@@ -31,15 +31,26 @@ const messageDeliveryModes = new Set(["steer", "followUp"]);
 
 export async function serveDashboard(options: {readonly configRootPath: string; readonly toolRootPath: string; readonly port: number}): Promise<void> {
   const paths = getDefaultLanePaths(options.configRootPath);
-  const htmlPath = resolve(options.toolRootPath, "dashboard/index.html");
+  const distDirectoryPath = resolve(options.toolRootPath, "dashboard/dist");
+  const htmlPath = resolve(distDirectoryPath, "index.html");
 
   const server = createServer(async (request, response) => {
     try {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
-      if (method === "GET" && url.pathname === "/") {
-        sendHtml(response, await readFile(htmlPath, "utf8"));
+      if (method === "GET" && (url.pathname === "/" || url.pathname.startsWith("/assets/") || url.pathname.endsWith(".js") || url.pathname.endsWith(".css"))) {
+        const assetPath = url.pathname === "/" ? htmlPath : resolve(distDirectoryPath, `.${url.pathname}`);
+        try {
+          const body = await readFile(assetPath);
+          sendBytes(response, 200, body, getContentType(assetPath));
+        } catch (error) {
+          if (isFileNotFoundError(error) && url.pathname === "/") {
+            sendHtml(response, "Dashboard frontend not built. Run: npm run dashboard:build");
+            return;
+          }
+          throw error;
+        }
         return;
       }
 
@@ -382,6 +393,21 @@ function sendJson(response: ServerResponse, statusCode: number, value: unknown):
 function sendHtml(response: ServerResponse, html: string): void {
   response.writeHead(200, {"content-type": "text/html; charset=utf-8"});
   response.end(html);
+}
+
+function sendBytes(response: ServerResponse, statusCode: number, body: Buffer, contentType: string): void {
+  response.writeHead(statusCode, {"content-type": contentType, "content-length": body.byteLength});
+  response.end(body);
+}
+
+function getContentType(path: string): string {
+  const extension = extname(path);
+  if (extension === ".html") return "text/html; charset=utf-8";
+  if (extension === ".js") return "text/javascript; charset=utf-8";
+  if (extension === ".css") return "text/css; charset=utf-8";
+  if (extension === ".json") return "application/json; charset=utf-8";
+  if (extension === ".svg") return "image/svg+xml";
+  return "application/octet-stream";
 }
 
 function isFileNotFoundError(error: unknown): boolean {
