@@ -366,7 +366,7 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
   const laneContext = await readLaneContext(paths, lane.id);
   const initialMessages = continueSession
     ? []
-    : [`/name ${lane.sessionName}`, formatLaneStartupPrompt({lane, runtimeState, todoFile, laneContext})];
+    : [formatLaneStartupPrompt({lane, runtimeState, todoFile, laneContext})];
   const toolRoot = getToolRoot();
   const exitCode = await launchPi({
     cwd: lane.repoPath,
