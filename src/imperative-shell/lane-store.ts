@@ -6,7 +6,7 @@ import {homedir} from "node:os";
 import {resolve} from "node:path";
 import {parseLaneEventLog, parseLaneRegistry, parseLaneRuntimeState, parseLaneTodoFile} from "../functional-core/validate-lane-data.js";
 import type {Lane, LaneEventLog, LaneRegistry, LaneRuntimeState, LaneTodoFile} from "../types.js";
-import {readJsonFile, writeJsonFile} from "./json-files.js";
+import {readJsonFile, readTextFile, writeJsonFile} from "./json-files.js";
 
 export type LanePaths = {
   readonly rootPath: string;
@@ -122,6 +122,13 @@ export async function loadLaneEventLog(paths: LanePaths, laneId: string): Promis
     if (isFileNotFoundError(error)) {
       return {laneId, events: []};
     }
+    if (error instanceof SyntaxError) {
+      const repaired = await tryRepairLaneEventLog(eventPath, laneId);
+      if (repaired) {
+        return repaired;
+      }
+      return {laneId, events: []};
+    }
     throw error;
   }
 }
@@ -166,6 +173,21 @@ export function getDefaultLaneHome(): string {
 
 function formatIssues(summary: string, issues: ReadonlyArray<{readonly path: string; readonly message: string}>): string {
   return `${summary}\n${issues.map(issue => `- ${issue.path}: ${issue.message}`).join("\n")}`;
+}
+
+async function tryRepairLaneEventLog(eventPath: string, laneId: string): Promise<LaneEventLog | null> {
+  const content = await readTextFile(eventPath);
+  const lastCompleteIndex = content.lastIndexOf("}\n");
+  if (lastCompleteIndex <= 0) {
+    return null;
+  }
+  const candidate = content.slice(0, lastCompleteIndex + 2).trim();
+  try {
+    const parsed = parseLaneEventLog(JSON.parse(candidate));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 function isFileNotFoundError(error: unknown): boolean {

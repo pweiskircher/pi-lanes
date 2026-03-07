@@ -33,6 +33,7 @@ let liveSessionHealth: {
   readonly lastActivityAt: string;
   readonly lastEventSummary: string;
 } | null = null;
+const laneEventAppendQueues = new Map<string, Promise<void>>();
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
@@ -341,16 +342,22 @@ async function findLaneById(laneId: string): Promise<Lane | null> {
 }
 
 async function appendLaneEvent(laneId: string, kind: LaneEventKind, summary: string, details: string | null): Promise<void> {
-  const paths = getLanePaths();
-  const eventLog = await loadLaneEventLog(paths, laneId);
-  const nextEvent: LaneEvent = {
-    timestamp: new Date().toISOString(),
-    kind,
-    summary,
-    details,
-  };
-  const events = [...eventLog.events, nextEvent].slice(-40);
-  await saveLaneEventLog(paths, {laneId, events});
+  const previous = laneEventAppendQueues.get(laneId) ?? Promise.resolve();
+  const next = previous.then(async () => {
+    const paths = getLanePaths();
+    const eventLog = await loadLaneEventLog(paths, laneId);
+    const nextEvent: LaneEvent = {
+      timestamp: new Date().toISOString(),
+      kind,
+      summary,
+      details,
+    };
+    const events = [...eventLog.events, nextEvent].slice(-40);
+    await saveLaneEventLog(paths, {laneId, events});
+  });
+
+  laneEventAppendQueues.set(laneId, next.catch(() => undefined));
+  await next;
 }
 
 function setLiveSessionHealth(laneId: string, isIdle: boolean, lastEventSummary: string): void {
