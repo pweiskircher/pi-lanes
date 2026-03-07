@@ -19,6 +19,7 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
-    "cac": "^7.0.0"
+    "cac": "^7.0.0",
+    "commander": "^14.0.3"
   }
 }

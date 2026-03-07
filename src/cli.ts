@@ -2,7 +2,7 @@
 
 import {existsSync} from "node:fs";
 import {resolve} from "node:path";
-import {cac} from "cac";
+import {Command} from "commander";
 import {createLane} from "./functional-core/lane-registry-transitions.js";
 import {
   approveProposedTodo,
@@ -108,40 +108,46 @@ type DashboardServeOptions = {
   readonly port?: string | number;
 };
 
-export async function main(argv: ReadonlyArray<string>): Promise<number> {
-  const cli = cac("pi-lane");
-  cli.help();
-  cli.version("0.1.0");
+export async function main(argv: ReadonlyArray<string> = process.argv): Promise<number> {
+  const program = new Command();
+  program.name("pi-lane").version("0.1.0").showHelpAfterError();
 
-  cli
-    .command("list", "List all lanes")
+  program
+    .command("list")
+    .description("List all lanes")
     .option("--json", "Output JSON")
     .action(async (options: JsonOption) => {
       await runWithHandling(() => runListCommand(createCommandContext(options)));
     });
 
-  cli
-    .command("show <laneId>", "Show one lane")
+  program
+    .command("show")
+    .argument("<laneId>")
+    .description("Show one lane")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: JsonOption) => {
       await runWithHandling(() => runShowCommand(laneId, createCommandContext(options)));
     });
 
-  cli
-    .command("start <laneId>", "Start a lane")
+  program
+    .command("start")
+    .argument("<laneId>")
+    .description("Start a lane")
     .option("--dry-run", "Update runtime state but do not launch pi")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: StartOptions) => {
       await runWithHandling(() => runStartCommand(laneId, createCommandContext(options), options));
     });
 
-  cli
-    .command("new <laneId>", "Create a new lane")
-    .option("--title <title>", "Lane title")
-    .option("--workspace <workspace>", "Lane workspace path")
-    .option("--repo <repo>", "Repository root path")
-    .option("--bookmark <bookmark>", "jj bookmark")
-    .option("--port <port>", "Dev server port")
+  program
+    .command("new")
+    .argument("<laneId>")
+    .description("Create a new lane")
+    .requiredOption("--title <title>", "Lane title")
+    .requiredOption("--workspace <workspace>", "Lane workspace path")
+    .requiredOption("--repo <repo>", "Repository root path")
+    .requiredOption("--bookmark <bookmark>", "jj bookmark")
+    .requiredOption("--port <port>", "Dev server port")
     .option("--session-name <sessionName>", "pi session name")
     .option("--server-command <serverCommand>", "Dev server command")
     .option("--priority <priority>", "Lane priority")
@@ -153,60 +159,73 @@ export async function main(argv: ReadonlyArray<string>): Promise<number> {
       await runWithHandling(() => runNewLaneCommand(laneId, createCommandContext(options), options));
     });
 
-  cli
-    .command("doctor", "Check lane setup health")
+  program
+    .command("doctor")
+    .description("Check lane setup health")
     .option("--json", "Output JSON")
     .action(async (options: JsonOption) => {
       await runWithHandling(() => runDoctorCommand(createCommandContext(options)));
     });
 
-  cli
-    .command("dashboard snapshot", "Emit a dashboard-friendly snapshot of all lanes")
+  const dashboard = program.command("dashboard").description("Dashboard commands");
+  dashboard
+    .command("snapshot")
+    .description("Emit a dashboard-friendly snapshot of all lanes")
     .option("--json", "Output JSON")
     .action(async (options: JsonOption) => {
       await runWithHandling(() => runDashboardSnapshotCommand(createCommandContext(options)));
     });
-
-  cli
-    .command("dashboard serve", "Run the local dashboard server")
+  dashboard
+    .command("serve")
+    .description("Run the local dashboard server")
     .option("--port <port>", "Dashboard port")
     .action(async (options: DashboardServeOptions) => {
       await runWithHandling(() => runDashboardServeCommand(options));
     });
 
-  cli
-    .command("todo list <laneId>", "List TODOs for a lane")
+  const todo = program.command("todo").description("TODO commands");
+  todo
+    .command("list")
+    .argument("<laneId>")
+    .description("List TODOs for a lane")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: JsonOption) => {
       await runWithHandling(() => runTodoListCommand(laneId, createCommandContext(options)));
     });
-
-  cli
-    .command("todo add <laneId>", "Add a TODO")
-    .option("--title <title>", "TODO title")
+  todo
+    .command("add")
+    .argument("<laneId>")
+    .description("Add a TODO")
+    .requiredOption("--title <title>", "TODO title")
     .option("--priority <priority>", "TODO priority")
     .option("--notes <notes>", "TODO notes")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: TodoAddOptions) => {
       await runWithHandling(() => runTodoAddCommand(laneId, createCommandContext(options), options));
     });
-
-  cli
-    .command("todo approve <laneId> <todoId>", "Approve an LLM-proposed TODO")
+  todo
+    .command("approve")
+    .argument("<laneId>")
+    .argument("<todoId>")
+    .description("Approve an LLM-proposed TODO")
     .option("--json", "Output JSON")
     .action(async (laneId: string, todoId: string, options: JsonOption) => {
       await runWithHandling(() => runTodoApproveCommand(laneId, todoId, createCommandContext(options)));
     });
-
-  cli
-    .command("todo reject <laneId> <todoId>", "Reject an LLM-proposed TODO")
+  todo
+    .command("reject")
+    .argument("<laneId>")
+    .argument("<todoId>")
+    .description("Reject an LLM-proposed TODO")
     .option("--json", "Output JSON")
     .action(async (laneId: string, todoId: string, options: JsonOption) => {
       await runWithHandling(() => runTodoRejectCommand(laneId, todoId, createCommandContext(options)));
     });
-
-  cli
-    .command("todo edit <laneId> <todoId>", "Edit a TODO")
+  todo
+    .command("edit")
+    .argument("<laneId>")
+    .argument("<todoId>")
+    .description("Edit a TODO")
     .option("--title <title>", "New title")
     .option("--priority <priority>", "New priority")
     .option("--notes <notes>", "New notes")
@@ -214,82 +233,96 @@ export async function main(argv: ReadonlyArray<string>): Promise<number> {
     .action(async (laneId: string, todoId: string, options: TodoEditOptions) => {
       await runWithHandling(() => runTodoEditCommand(laneId, todoId, createCommandContext(options), options));
     });
-
-  cli
-    .command("todo delete <laneId> <todoId>", "Delete a TODO")
+  todo
+    .command("delete")
+    .argument("<laneId>")
+    .argument("<todoId>")
+    .description("Delete a TODO")
     .option("--json", "Output JSON")
     .action(async (laneId: string, todoId: string, options: JsonOption) => {
       await runWithHandling(() => runTodoDeleteCommand(laneId, todoId, createCommandContext(options)));
     });
-
-  cli
-    .command("todo set-status <laneId> <todoId> <status>", "Set TODO status")
+  todo
+    .command("set-status")
+    .argument("<laneId>")
+    .argument("<todoId>")
+    .argument("<status>")
+    .description("Set TODO status")
     .option("--json", "Output JSON")
     .action(async (laneId: string, todoId: string, status: string, options: JsonOption) => {
       await runWithHandling(() => runTodoSetStatusCommand(laneId, todoId, status, createCommandContext(options)));
     });
 
-  cli
-    .command("runtime show <laneId>", "Show runtime state")
+  const runtime = program.command("runtime").description("Runtime commands");
+  runtime
+    .command("show")
+    .argument("<laneId>")
+    .description("Show runtime state")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: JsonOption) => {
       await runWithHandling(() => runRuntimeShowCommand(laneId, createCommandContext(options)));
     });
-
-  cli
-    .command("runtime set-summary <laneId>", "Set runtime summary")
-    .option("--text <text>", "Summary text")
+  runtime
+    .command("set-summary")
+    .argument("<laneId>")
+    .description("Set runtime summary")
+    .requiredOption("--text <text>", "Summary text")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: RuntimeTextOptions) => {
       await runWithHandling(() => runRuntimeSetSummaryCommand(laneId, createCommandContext(options), options));
     });
-
-  cli
-    .command("runtime set-needs-input <laneId>", "Set needs-input text")
-    .option("--text <text>", "Needs-input text")
+  runtime
+    .command("set-needs-input")
+    .argument("<laneId>")
+    .description("Set needs-input text")
+    .requiredOption("--text <text>", "Needs-input text")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: RuntimeTextOptions) => {
       await runWithHandling(() => runRuntimeSetNeedsInputCommand(laneId, createCommandContext(options), options));
     });
-
-  cli
-    .command("runtime set-current-todo <laneId> <todoId>", "Set current runtime TODO")
+  runtime
+    .command("set-current-todo")
+    .argument("<laneId>")
+    .argument("<todoId>")
+    .description("Set current runtime TODO")
     .option("--json", "Output JSON")
     .action(async (laneId: string, todoId: string, options: JsonOption) => {
       await runWithHandling(() => runRuntimeSetCurrentTodoCommand(laneId, todoId, createCommandContext(options)));
     });
-
-  cli
-    .command("runtime clear-current-todo <laneId>", "Clear current runtime TODO")
+  runtime
+    .command("clear-current-todo")
+    .argument("<laneId>")
+    .description("Clear current runtime TODO")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: JsonOption) => {
       await runWithHandling(() => runRuntimeClearCurrentTodoCommand(laneId, createCommandContext(options)));
     });
-
-  cli
-    .command("runtime set-mode <laneId> <mode>", "Set runtime mode")
+  runtime
+    .command("set-mode")
+    .argument("<laneId>")
+    .argument("<mode>")
+    .description("Set runtime mode")
     .option("--json", "Output JSON")
     .action(async (laneId: string, mode: string, options: JsonOption) => {
       await runWithHandling(() => runRuntimeSetModeCommand(laneId, mode, createCommandContext(options)));
     });
-
-  cli
-    .command("runtime set-last-human-instruction <laneId>", "Set last human instruction")
-    .option("--text <text>", "Instruction text")
+  runtime
+    .command("set-last-human-instruction")
+    .argument("<laneId>")
+    .description("Set last human instruction")
+    .requiredOption("--text <text>", "Instruction text")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: RuntimeTextOptions) => {
       await runWithHandling(() => runRuntimeSetLastHumanInstructionCommand(laneId, createCommandContext(options), options));
     });
 
-  cli.parse(["node", "pi-lane", ...argv], {run: false});
-  const matchedCommand = cli.matchedCommand;
-  if (!matchedCommand) {
-    cli.outputHelp();
+  if (argv.length <= 2) {
+    program.outputHelp();
     return 1;
   }
 
-  await cli.runMatchedCommand();
-  return 0;
+  await program.parseAsync([...argv]);
+  return typeof process.exitCode === "number" ? process.exitCode : 0;
 }
 
 function createCommandContext(options: JsonOption): CommandContext {
@@ -485,7 +518,7 @@ async function runNewLaneCommand(laneId: string, context: CommandContext, option
   const sessionName = options.sessionName ?? laneId;
   const priority = options.priority === undefined ? null : parseLanePriority(options.priority);
   const status = options.status === undefined ? "active" : parseLaneStatus(options.status);
-  const port = parsePortOption(options.port);
+  const port = parsePortOption(options.port ?? "");
   const tags = parseTagsOption(options.tags);
 
   const result = createLane(lanes, {
@@ -976,7 +1009,7 @@ function toIsoNow(): string {
 
 const isDirectExecution = import.meta.url === `file://${resolve(process.argv[1] ?? "")}`;
 if (isDirectExecution) {
-  void main(process.argv.slice(2)).then(exitCode => {
+  void main(process.argv).then(exitCode => {
     process.exitCode = exitCode;
   });
 }
