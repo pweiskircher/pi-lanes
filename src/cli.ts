@@ -156,6 +156,13 @@ export async function main(argv: ReadonlyArray<string>): Promise<number> {
     });
 
   cli
+    .command("dashboard snapshot", "Emit a dashboard-friendly snapshot of all lanes")
+    .option("--json", "Output JSON")
+    .action(async (options: JsonOption) => {
+      await runWithHandling(() => runDashboardSnapshotCommand(createCommandContext(options)));
+    });
+
+  cli
     .command("todo list <laneId>", "List TODOs for a lane")
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: JsonOption) => {
@@ -343,6 +350,27 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
   });
   await saveLaneRuntimeState(paths, createStoppedRuntimeState(runtimeState, toIsoNow()));
   return exitCode;
+}
+
+async function runDashboardSnapshotCommand(context: CommandContext): Promise<number> {
+  const paths = getDefaultLanePaths(process.cwd());
+  const lanes = await loadLaneRegistry(paths);
+  const snapshot = await Promise.all(
+    lanes.map(async lane => {
+      const runtimeState = await loadLaneRuntimeState(paths, lane.id);
+      const todoFile = await loadLaneTodoFile(paths, lane.id);
+      return buildLaneDetail(lane, runtimeState, todoFile);
+    }),
+  );
+
+  if (context.outputMode === "json") {
+    printJson({ok: true, generatedAt: toIsoNow(), lanes: snapshot});
+  } else {
+    for (const lane of snapshot) {
+      console.log(`${lane.id}  ${lane.stateLabel}  open=${lane.todoCounts.open}  proposed=${lane.todoCounts.proposed}`);
+    }
+  }
+  return 0;
 }
 
 async function runDoctorCommand(context: CommandContext): Promise<number> {

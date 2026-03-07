@@ -1,7 +1,21 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { createProposedTodo } from "../src/functional-core/todo-transitions.js";
-import { getDefaultLanePaths, loadLaneRegistry, loadLaneTodoFile, saveLaneTodoFile } from "../src/imperative-shell/lane-store.js";
+import {
+  createStartedRuntimeState,
+  createStoppedRuntimeState,
+  setRuntimeCurrentTodo,
+  setRuntimePendingQuestion,
+  setRuntimeSummary,
+} from "../src/functional-core/runtime-state.js";
+import {
+  getDefaultLanePaths,
+  loadLaneRegistry,
+  loadLaneRuntimeState,
+  loadLaneTodoFile,
+  saveLaneRuntimeState,
+  saveLaneTodoFile,
+} from "../src/imperative-shell/lane-store.js";
 import type { Lane, LaneTodo, TodoPriority } from "../src/types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
@@ -26,7 +40,9 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const todoFile = await loadLaneTodoFile(getLanePaths(), lane.id);
+      const paths = getLanePaths();
+      const todoFile = await loadLaneTodoFile(paths, lane.id);
+      const runtimeState = await loadOrCreateRuntimeState(lane);
       const openCount = todoFile.todos.filter(todo => todo.status === "open").length;
       const proposedCount = todoFile.todos.filter(todo => todo.status === "proposed").length;
       const text = [
@@ -36,7 +52,11 @@ export default function (pi: ExtensionAPI) {
         `Bookmark: ${lane.jjBookmark}`,
         `Open TODOs: ${openCount}`,
         `Proposed TODOs: ${proposedCount}`,
-      ].join("\n");
+        runtimeState.currentSummary ? `Summary: ${runtimeState.currentSummary}` : null,
+        runtimeState.pendingQuestion ? `Needs input: ${runtimeState.pendingQuestion}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
 
       pi.sendMessage({
         customType: "lane-status",
@@ -64,6 +84,67 @@ export default function (pi: ExtensionAPI) {
         display: true,
         details: { laneId: lane.id },
       });
+    },
+  });
+
+  pi.registerCommand("lane-set-summary", {
+    description: "Set the current lane runtime summary",
+    handler: async (args, ctx) => {
+      const lane = await findCurrentLane();
+      if (!lane) {
+        ctx.ui.notify("No lane matched the current workspace", "warning");
+        return;
+      }
+
+      const runtimeState = await loadOrCreateRuntimeState(lane);
+      const updated = setRuntimeSummary(runtimeState, args.trim(), new Date().toISOString());
+      await saveLaneRuntimeState(getLanePaths(), updated);
+      ctx.ui.notify(`Updated lane summary for ${lane.id}`, "success");
+    },
+  });
+
+  pi.registerCommand("lane-set-question", {
+    description: "Set the current lane pending question",
+    handler: async (args, ctx) => {
+      const lane = await findCurrentLane();
+      if (!lane) {
+        ctx.ui.notify("No lane matched the current workspace", "warning");
+        return;
+      }
+
+      const runtimeState = await loadOrCreateRuntimeState(lane);
+      const updated = setRuntimePendingQuestion(runtimeState, args.trim(), new Date().toISOString());
+      await saveLaneRuntimeState(getLanePaths(), updated);
+      ctx.ui.notify(`Updated pending question for ${lane.id}`, "success");
+    },
+  });
+
+  pi.registerCommand("lane-set-current-todo", {
+    description: "Set the current lane TODO (usage: /lane-set-current-todo <todo-id>)",
+    handler: async (args, ctx) => {
+      const todoId = args.trim();
+      if (!todoId) {
+        ctx.ui.notify("Usage: /lane-set-current-todo <todo-id>", "warning");
+        return;
+      }
+
+      const lane = await findCurrentLane();
+      if (!lane) {
+        ctx.ui.notify("No lane matched the current workspace", "warning");
+        return;
+      }
+
+      const paths = getLanePaths();
+      const runtimeState = await loadOrCreateRuntimeState(lane);
+      const todoFile = await loadLaneTodoFile(paths, lane.id);
+      const result = setRuntimeCurrentTodo(runtimeState, todoFile, todoId, new Date().toISOString());
+      if (!result.success) {
+        ctx.ui.notify(result.issues.map(issue => issue.message).join("; "), "error");
+        return;
+      }
+
+      await saveLaneRuntimeState(paths, result.data);
+      ctx.ui.notify(`Set current TODO to ${todoId}`, "success");
     },
   });
 
@@ -132,6 +213,18 @@ async function findCurrentLane(): Promise<Lane | null> {
   const lanes = await loadLaneRegistry(getLanePaths());
   const cwd = process.cwd();
   return lanes.find(lane => lane.workspacePath === cwd) ?? null;
+}
+
+async function loadOrCreateRuntimeState(lane: Lane) {
+  const paths = getLanePaths();
+  const existing = await loadLaneRuntimeState(paths, lane.id);
+  if (existing) {
+    return existing;
+  }
+  const now = new Date().toISOString();
+  const state = createStoppedRuntimeState(createStartedRuntimeState({ lane, existingRuntimeState: null, now }), now);
+  await saveLaneRuntimeState(paths, state);
+  return state;
 }
 
 function createNextTodoId(existingTodos: ReadonlyArray<LaneTodo>): string {

@@ -53,6 +53,7 @@ Implemented now:
 - `pi-lane-start <lane-id>` via `bin/pi-lane-start.mjs`
 - `pi-lane list [--json]`
 - `pi-lane show <lane-id> [--json]`
+- `pi-lane dashboard snapshot [--json]`
 - `pi-lane todo list <lane-id> [--json]`
 - `pi-lane todo add <lane-id> --title ... [--json]`
 - `pi-lane todo edit <lane-id> <todo-id> ... [--json]`
@@ -92,6 +93,7 @@ Implemented now:
 7. For dashboard-friendly output, use JSON mode:
    - `node bin/pi-lane.mjs list --json`
    - `node bin/pi-lane.mjs show <lane-id> --json`
+   - `node bin/pi-lane.mjs dashboard snapshot --json`
    - `node bin/pi-lane.mjs todo list <lane-id> --json`
    - `node bin/pi-lane.mjs doctor --json`
 
@@ -104,7 +106,7 @@ Implemented now:
 - `.pi/settings.json`
 - `.pi/AGENTS.md`
 
-These are now wired into the repo and the lane startup flow. The extension is still intentionally small, but it now provides real lane commands and an LLM-facing TODO proposal tool.
+These are now wired into the repo and the lane startup flow. The extension is still intentionally small, but it now provides real lane commands, runtime update commands, and an LLM-facing TODO proposal tool.
 
 ## Next step
 

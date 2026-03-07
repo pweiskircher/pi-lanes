@@ -89,6 +89,9 @@ The extension is still intentionally small, but it now provides:
 - automatic lane session naming on session start when it can match the workspace
 - `/lane-status`
 - `/lane-todos`
+- `/lane-set-summary`
+- `/lane-set-question`
+- `/lane-set-current-todo`
 - `lane_propose_todo` for LLM-proposed TODO capture
 
 ## Suggested priority
