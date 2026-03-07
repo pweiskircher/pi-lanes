@@ -45,6 +45,7 @@ This repo defines a V1 for working across multiple concurrent efforts while keep
 ## Current implementation status
 
 Implemented now:
+- `pi-lane new <lane-id> ... [--json]`
 - `pi-lane-start <lane-id>` via `bin/pi-lane-start.mjs`
 - `pi-lane list [--json]`
 - `pi-lane show <lane-id> [--json]`
@@ -70,7 +71,8 @@ Implemented now:
 
 1. Install dependencies:
    - `npm install`
-2. Copy `examples/lanes.example.json` into `config/lanes.json` and adapt it.
+2. Create a lane:
+   - `node bin/pi-lane.mjs new mt-core --title 'Multithreading large subsystem' --workspace /path/to/workspaces/mt-core --repo /path/to/repo --bookmark pat/mt-core --port 3001`
 3. Create any real lane workspaces you reference.
 4. Start a lane:
    - `node bin/pi-lane-start.mjs <lane-id>`

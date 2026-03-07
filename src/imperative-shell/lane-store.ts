@@ -22,6 +22,10 @@ export async function loadLaneRegistry(paths: LanePaths): Promise<LaneRegistry> 
   return parsed.data;
 }
 
+export async function saveLaneRegistry(paths: LanePaths, lanes: LaneRegistry): Promise<void> {
+  await writeJsonFile(paths.configPath, lanes);
+}
+
 export function getLaneById(lanes: LaneRegistry, laneId: string): Lane {
   const lane = lanes.find(candidate => candidate.id === laneId);
   if (!lane) {

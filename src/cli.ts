@@ -3,6 +3,7 @@
 import {existsSync} from "node:fs";
 import {resolve} from "node:path";
 import {cac} from "cac";
+import {createLane} from "./functional-core/lane-registry-transitions.js";
 import {
   approveProposedTodo,
   createHumanTodo,
@@ -28,6 +29,7 @@ import {
   loadLaneRegistry,
   loadLaneRuntimeState,
   loadLaneTodoFile,
+  saveLaneRegistry,
   saveLaneRuntimeState,
   saveLaneTodoFile,
 } from "./imperative-shell/lane-store.js";
@@ -36,8 +38,10 @@ import {hasSavedPiSessionForCwd} from "./imperative-shell/pi-session-discovery.j
 import type {
   CreateHumanTodoOptions,
   Lane,
+  LanePriority,
   LaneRuntimeMode,
   LaneRuntimeState,
+  LaneStatus,
   LaneTodo,
   LaneTodoFile,
   TodoPriority,
@@ -47,6 +51,8 @@ import type {
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
 const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
 const runtimeModes = new Set<LaneRuntimeMode>(["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]);
+const lanePriorities = new Set<LanePriority>(["main", "side", "parked"]);
+const laneStatuses = new Set<LaneStatus>(["active", "paused", "archived"]);
 
 type OutputMode = "text" | "json";
 
@@ -60,6 +66,20 @@ type JsonOption = {
 
 type StartOptions = JsonOption & {
   readonly dryRun?: boolean;
+};
+
+type NewLaneOptions = JsonOption & {
+  readonly title?: string;
+  readonly workspace?: string;
+  readonly repo?: string;
+  readonly bookmark?: string;
+  readonly port?: string | number;
+  readonly sessionName?: string;
+  readonly serverCommand?: string;
+  readonly priority?: string;
+  readonly status?: string;
+  readonly notes?: string;
+  readonly tags?: string;
 };
 
 type TodoAddOptions = JsonOption & {
@@ -103,6 +123,24 @@ export async function main(argv: ReadonlyArray<string>): Promise<number> {
     .option("--json", "Output JSON")
     .action(async (laneId: string, options: StartOptions) => {
       await runWithHandling(() => runStartCommand(laneId, createCommandContext(options), options));
+    });
+
+  cli
+    .command("new <laneId>", "Create a new lane")
+    .option("--title <title>", "Lane title")
+    .option("--workspace <workspace>", "Lane workspace path")
+    .option("--repo <repo>", "Repository root path")
+    .option("--bookmark <bookmark>", "jj bookmark")
+    .option("--port <port>", "Dev server port")
+    .option("--session-name <sessionName>", "pi session name")
+    .option("--server-command <serverCommand>", "Dev server command")
+    .option("--priority <priority>", "Lane priority")
+    .option("--status <status>", "Lane status")
+    .option("--notes <notes>", "Lane notes")
+    .option("--tags <tags>", "Comma-separated tags")
+    .option("--json", "Output JSON")
+    .action(async (laneId: string, options: NewLaneOptions) => {
+      await runWithHandling(() => runNewLaneCommand(laneId, createCommandContext(options), options));
     });
 
   cli
@@ -276,6 +314,73 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
   const exitCode = await launchPi({cwd: lane.workspacePath, continueSession});
   await saveLaneRuntimeState(paths, createStoppedRuntimeState(runtimeState, toIsoNow()));
   return exitCode;
+}
+
+async function runNewLaneCommand(laneId: string, context: CommandContext, options: NewLaneOptions): Promise<number> {
+  if (!options.title) {
+    throw new Error("missing required flag: --title");
+  }
+  if (!options.workspace) {
+    throw new Error("missing required flag: --workspace");
+  }
+  if (!options.repo) {
+    throw new Error("missing required flag: --repo");
+  }
+  if (!options.bookmark) {
+    throw new Error("missing required flag: --bookmark");
+  }
+  if (options.port === undefined) {
+    throw new Error("missing required flag: --port");
+  }
+
+  const paths = getDefaultLanePaths(process.cwd());
+  const lanes = await loadLaneRegistry(paths);
+  const sessionName = options.sessionName ?? laneId;
+  const priority = options.priority === undefined ? null : parseLanePriority(options.priority);
+  const status = options.status === undefined ? "active" : parseLaneStatus(options.status);
+  const port = parsePortOption(options.port);
+  const tags = parseTagsOption(options.tags);
+
+  const result = createLane(lanes, {
+    id: laneId,
+    title: options.title,
+    workspacePath: options.workspace,
+    repoPath: options.repo,
+    jjBookmark: options.bookmark,
+    port,
+    sessionName,
+    serverCommand: options.serverCommand ?? null,
+    priority,
+    status,
+    notes: options.notes ?? null,
+    tags,
+  });
+  if (!result.success) {
+    throw new Error(result.issues.map(issue => issue.message).join("; "));
+  }
+
+  await saveLaneRegistry(paths, result.data);
+  await saveLaneTodoFile(paths, {laneId, todos: []});
+
+  const createdLane = mustFindLane(result.data, laneId);
+  const now = toIsoNow();
+  await saveLaneRuntimeState(
+    paths,
+    createStoppedRuntimeState(
+      createStartedRuntimeState({
+        lane: createdLane,
+        existingRuntimeState: null,
+        now,
+      }),
+      now,
+    ),
+  );
+  if (context.outputMode === "json") {
+    printJson({ok: true, action: "lane.new", lane: createdLane});
+  } else {
+    console.log(`Created lane ${laneId}`);
+  }
+  return 0;
 }
 
 async function runListCommand(context: CommandContext): Promise<number> {
@@ -625,6 +730,14 @@ function mustFindTodo(todoFile: LaneTodoFile, todoId: string): LaneTodo {
   return todo;
 }
 
+function mustFindLane(lanes: ReadonlyArray<Lane>, laneId: string): Lane {
+  const lane = lanes.find(candidate => candidate.id === laneId);
+  if (!lane) {
+    throw new Error(`lane not found after operation: ${laneId}`);
+  }
+  return lane;
+}
+
 function createHumanTodoOptions(options: {
   readonly title: string;
   readonly priority: TodoPriority;
@@ -672,6 +785,38 @@ function parseRuntimeMode(input: string): LaneRuntimeMode {
     throw new Error(`invalid runtime mode: ${input}`);
   }
   return input as LaneRuntimeMode;
+}
+
+function parseLanePriority(input: string): LanePriority {
+  if (!lanePriorities.has(input as LanePriority)) {
+    throw new Error(`invalid lane priority: ${input}`);
+  }
+  return input as LanePriority;
+}
+
+function parseLaneStatus(input: string): LaneStatus {
+  if (!laneStatuses.has(input as LaneStatus)) {
+    throw new Error(`invalid lane status: ${input}`);
+  }
+  return input as LaneStatus;
+}
+
+function parsePortOption(input: string | number): number {
+  const port = typeof input === "number" ? input : Number.parseInt(input, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`invalid port: ${input}`);
+  }
+  return port;
+}
+
+function parseTagsOption(input: string | undefined): ReadonlyArray<string> {
+  if (!input) {
+    return [];
+  }
+  return input
+    .split(",")
+    .map(tag => tag.trim())
+    .filter(tag => tag.length > 0);
 }
 
 function printJson(value: unknown): void {
