@@ -1,6 +1,6 @@
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from "node:http";
 import {randomUUID} from "node:crypto";
-import type {ExtensionAPI} from "@mariozechner/pi-coding-agent";
+import type {ExtensionAPI, ExtensionContext} from "@mariozechner/pi-coding-agent";
 import {Type} from "@sinclair/typebox";
 import {createProposedTodo} from "../src/todos/todo-transitions.js";
 import {
@@ -42,12 +42,27 @@ const laneEventAppendQueues = new Map<string, Promise<void>>();
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     const lane = await findCurrentLane();
-    if (!lane) return;
+    if (!lane) {
+      updateLaneStatus(ctx, null, null);
+      return;
+    }
     pi.setSessionName(lane.sessionName);
     setLiveSessionHealth(lane.id, true, `session started in ${lane.repoPath}`);
     await appendLaneEvent(lane.id, "session_start", "Session started", lane.repoPath);
     await ensureMessageBridge(pi, lane);
+    const runtimeState = await loadOrCreateRuntimeState(lane);
+    updateLaneStatus(ctx, lane, runtimeState);
     ctx.ui.notify(`lane: ${lane.id}`, "info");
+  });
+
+  pi.on("session_switch", async (_event, ctx) => {
+    const lane = await findCurrentLane();
+    if (!lane) {
+      updateLaneStatus(ctx, null, null);
+      return;
+    }
+    const runtimeState = await loadOrCreateRuntimeState(lane);
+    updateLaneStatus(ctx, lane, runtimeState);
   });
 
   pi.on("input", async event => {
@@ -179,6 +194,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       await saveLaneRuntimeState(paths, result.data);
+      updateLaneStatus(ctx, lane, result.data);
       ctx.ui.notify(`Set current TODO to ${todoId}`, "success");
     },
   });
@@ -306,6 +322,28 @@ export default function (pi: ExtensionAPI) {
 
 function getLanePaths() {
   return getDefaultLanePaths(process.env.PI_LANES_HOME);
+}
+
+function updateLaneStatus(ctx: ExtensionContext, lane: Lane | null, runtimeState: LaneRuntimeState | null): void {
+  ctx.ui.setStatus("lane", undefined);
+
+  if (!lane) {
+    ctx.ui.setWidget("lane-banner", undefined);
+    return;
+  }
+
+  ctx.ui.setWidget("lane-banner", (_tui, widgetTheme) => {
+    const currentTodoText = runtimeState?.currentTodoId
+      ? `${widgetTheme.fg("dim", " · todo ")}${widgetTheme.fg("text", runtimeState.currentTodoId)}`
+      : "";
+    const content = `${widgetTheme.fg("muted", "Lane: ")}${widgetTheme.fg("accent", widgetTheme.bold(lane.id))}${currentTodoText}`;
+    return {
+      invalidate() {},
+      render(_width: number): string[] {
+        return [content];
+      },
+    };
+  });
 }
 
 async function findCurrentLane(): Promise<Lane | null> {
