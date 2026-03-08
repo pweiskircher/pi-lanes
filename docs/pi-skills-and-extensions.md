@@ -41,6 +41,14 @@ Suggested output format:
 - what is next
 - what needs input
 
+### lane-ci-investigation
+
+Purpose:
+- teach pi how to check CI for the current lane with a gh-first workflow
+- inspect GitHub checks first, including Buildkite-backed checks surfaced through GitHub
+- investigate the first actionable failure and summarize it for the human
+- stop before making changes unless explicitly asked
+
 ### manager-lane-review
 
 Purpose:
