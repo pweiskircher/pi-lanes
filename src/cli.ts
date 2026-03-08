@@ -395,11 +395,6 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
     continueSession,
     initialMessages,
     extensionPaths: [resolve(toolRoot, "extensions/lane-bridge.ts")],
-    skillPaths: [
-      resolve(toolRoot, "skills/lane-context/SKILL.md"),
-      resolve(toolRoot, "skills/lane-todo-hygiene/SKILL.md"),
-      resolve(toolRoot, "skills/lane-status-summary/SKILL.md"),
-    ],
     environment: {
       ...process.env,
       PI_LANES_HOME: paths.rootPath,

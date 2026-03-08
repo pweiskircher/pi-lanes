@@ -8,8 +8,8 @@ export type LaunchPiOptions = {
   readonly cwd: string;
   readonly continueSession: boolean;
   readonly initialMessages: ReadonlyArray<string>;
-  readonly extensionPaths: ReadonlyArray<string>;
-  readonly skillPaths: ReadonlyArray<string>;
+  readonly extensionPaths?: ReadonlyArray<string>;
+  readonly skillPaths?: ReadonlyArray<string>;
   readonly environment: NodeJS.ProcessEnv;
 };
 
@@ -35,10 +35,10 @@ export async function ensurePiExists(): Promise<void> {
 export async function launchPi(options: LaunchPiOptions): Promise<number> {
   const args = options.continueSession ? ["-c", "--session-control"] : ["--session-control"];
 
-  for (const extensionPath of options.extensionPaths) {
+  for (const extensionPath of options.extensionPaths ?? []) {
     args.push("--extension", extensionPath);
   }
-  for (const skillPath of options.skillPaths) {
+  for (const skillPath of options.skillPaths ?? []) {
     args.push("--skill", skillPath);
   }
 
