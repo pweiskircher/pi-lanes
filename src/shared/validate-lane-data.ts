@@ -223,9 +223,13 @@ function parseLaneTodo(input: unknown, path: string, issues: Array<ValidationIss
   const updatedAt = readRequiredIsoDate(objectValue.updatedAt, `${path}.updatedAt`, issues);
 
   if (createdBy === "llm") {
-    if (status !== "proposed") issues.push({path: `${path}.status`, message: 'llm-created todos must start as "proposed"'});
-    if (needsReview !== true) issues.push({path: `${path}.needsReview`, message: "llm-created todos must require review"});
     if (!proposalReason) issues.push({path: `${path}.proposalReason`, message: "llm-created todos must include a proposal reason"});
+    if (status === "proposed" && needsReview !== true) {
+      issues.push({path: `${path}.needsReview`, message: "unreviewed llm-created todos must require review"});
+    }
+    if (status !== "proposed" && needsReview !== false) {
+      issues.push({path: `${path}.needsReview`, message: "reviewed llm-created todos cannot still require review"});
+    }
   }
 
   if (createdBy === "human" && needsReview === true) {

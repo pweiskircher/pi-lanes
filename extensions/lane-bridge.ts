@@ -2,7 +2,15 @@ import {createServer, type IncomingMessage, type Server, type ServerResponse} fr
 import {randomUUID} from "node:crypto";
 import type {ExtensionAPI, ExtensionContext} from "@mariozechner/pi-coding-agent";
 import {Type} from "@sinclair/typebox";
-import {createProposedTodo} from "../src/todos/todo-transitions.js";
+import {
+  approveProposedTodo,
+  createHumanTodo,
+  createProposedTodo,
+  deleteTodo,
+  editTodo,
+  rejectProposedTodo,
+  setTodoStatus,
+} from "../src/todos/todo-transitions.js";
 import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
@@ -19,9 +27,10 @@ import {
   saveLaneRuntimeState,
   saveLaneTodoFile,
 } from "../src/storage/lane-store.js";
-import type {Lane, LaneEvent, LaneEventKind, LaneRuntimeState, LaneTodo, TodoPriority} from "../src/types.js";
+import type {Lane, LaneEvent, LaneEventKind, LaneRuntimeState, LaneTodo, LaneTodoFile, TodoPriority, TodoStatus, ValidationResult} from "../src/types.js";
 
 const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
+const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
 
 let activeMessageBridge: {readonly laneId: string; readonly port: number; readonly authToken: string; readonly server: Server} | null = null;
 let liveSessionHealth: {
@@ -196,6 +205,136 @@ export default function (pi: ExtensionAPI) {
       await saveLaneRuntimeState(paths, result.data);
       updateLaneStatus(ctx, lane, result.data);
       ctx.ui.notify(`Set current TODO to ${todoId}`, "success");
+    },
+  });
+
+  pi.registerTool({
+    name: "lane_todo_manager",
+    label: "Lane todo manager",
+    description: "Manage TODOs for the current lane. Use this for lane-specific TODO listing, editing, status changes, approval/rejection, deletion, and current TODO updates.",
+    parameters: Type.Object({
+      action: Type.String({description: "One of: list, add_human, edit, set_status, delete, approve, reject, set_current, clear_current"}),
+      todoId: Type.Optional(Type.String({description: "Target TODO id when required"})),
+      title: Type.Optional(Type.String({description: "TODO title for add_human or edit"})),
+      priority: Type.Optional(Type.String({description: "low, medium, or high"})),
+      notes: Type.Optional(Type.String({description: "Optional TODO notes for add_human or edit"})),
+      status: Type.Optional(Type.String({description: "open, in_progress, blocked, done, or dropped"})),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const lane = await findCurrentLane();
+      if (!lane) {
+        return {content: [{type: "text", text: "No lane matched the current session."}], details: {ok: false}};
+      }
+
+      const paths = getLanePaths();
+      const now = new Date().toISOString();
+      const action = params.action.trim();
+      const todoFile = await loadLaneTodoFile(paths, lane.id);
+      const runtimeState = await loadOrCreateRuntimeState(lane);
+
+      if (action === "list") {
+        return {
+          content: [{type: "text", text: formatTodos(todoFile.todos)}],
+          details: {ok: true, laneId: lane.id, todos: todoFile.todos, currentTodoId: runtimeState.currentTodoId},
+        };
+      }
+
+      if (action === "clear_current") {
+        const result = setRuntimeCurrentTodo(runtimeState, todoFile, null, now);
+        if (!result.success) {
+          return {content: [{type: "text", text: result.issues.map(issue => issue.message).join("; ")}], details: {ok: false, issues: result.issues}};
+        }
+        await saveLaneRuntimeState(paths, result.data);
+        updateLaneStatus(ctx, lane, result.data);
+        return {content: [{type: "text", text: `Cleared current TODO for ${lane.id}.`}], details: {ok: true, laneId: lane.id, runtimeState: result.data}};
+      }
+
+      if (action === "set_current") {
+        if (typeof params.todoId !== "string" || params.todoId.trim().length === 0) {
+          return {content: [{type: "text", text: "Missing required field: todoId"}], details: {ok: false}};
+        }
+        const result = setRuntimeCurrentTodo(runtimeState, todoFile, params.todoId.trim(), now);
+        if (!result.success) {
+          return {content: [{type: "text", text: result.issues.map(issue => issue.message).join("; ")}], details: {ok: false, issues: result.issues}};
+        }
+        await saveLaneRuntimeState(paths, result.data);
+        updateLaneStatus(ctx, lane, result.data);
+        return {content: [{type: "text", text: `Set current TODO to ${params.todoId.trim()}.`}], details: {ok: true, laneId: lane.id, runtimeState: result.data}};
+      }
+
+      let todoResult: ValidationResult<LaneTodoFile>;
+      if (action === "add_human") {
+        if (typeof params.title !== "string" || params.title.trim().length === 0) {
+          return {content: [{type: "text", text: "Missing required field: title"}], details: {ok: false}};
+        }
+        todoResult = createHumanTodo(todoFile, {
+          id: createNextTodoId(todoFile.todos),
+          title: params.title,
+          priority: parseTodoPriorityStrict(params.priority ?? "medium"),
+          notes: typeof params.notes === "string" ? params.notes : null,
+          now,
+        });
+      } else if (action === "approve") {
+        if (typeof params.todoId !== "string" || params.todoId.trim().length === 0) {
+          return {content: [{type: "text", text: "Missing required field: todoId"}], details: {ok: false}};
+        }
+        todoResult = approveProposedTodo(todoFile, params.todoId.trim(), now);
+      } else if (action === "reject") {
+        if (typeof params.todoId !== "string" || params.todoId.trim().length === 0) {
+          return {content: [{type: "text", text: "Missing required field: todoId"}], details: {ok: false}};
+        }
+        todoResult = rejectProposedTodo(todoFile, params.todoId.trim(), now);
+      } else if (action === "edit") {
+        if (typeof params.todoId !== "string" || params.todoId.trim().length === 0) {
+          return {content: [{type: "text", text: "Missing required field: todoId"}], details: {ok: false}};
+        }
+        todoResult = editTodo(
+          todoFile,
+          params.todoId.trim(),
+          {
+            title: typeof params.title === "string" ? params.title : null,
+            notes: typeof params.notes === "string" ? params.notes : null,
+            priority: params.priority === undefined ? null : parseTodoPriorityStrict(params.priority),
+          },
+          now,
+        );
+      } else if (action === "set_status") {
+        if (typeof params.todoId !== "string" || params.todoId.trim().length === 0) {
+          return {content: [{type: "text", text: "Missing required field: todoId"}], details: {ok: false}};
+        }
+        if (typeof params.status !== "string" || params.status.trim().length === 0) {
+          return {content: [{type: "text", text: "Missing required field: status"}], details: {ok: false}};
+        }
+        todoResult = setTodoStatus(todoFile, params.todoId.trim(), parseTodoStatus(params.status), now);
+      } else if (action === "delete") {
+        if (typeof params.todoId !== "string" || params.todoId.trim().length === 0) {
+          return {content: [{type: "text", text: "Missing required field: todoId"}], details: {ok: false}};
+        }
+        todoResult = deleteTodo(todoFile, params.todoId.trim());
+      } else {
+        return {content: [{type: "text", text: `Unsupported action: ${action}`}], details: {ok: false}};
+      }
+
+      if (!todoResult.success) {
+        return {content: [{type: "text", text: todoResult.issues.map(issue => issue.message).join("; ")}], details: {ok: false, issues: todoResult.issues}};
+      }
+
+      await saveLaneTodoFile(paths, todoResult.data);
+
+      let nextRuntimeState = runtimeState;
+      if (action === "delete" && runtimeState.currentTodoId === params.todoId?.trim()) {
+        const runtimeResult = setRuntimeCurrentTodo(runtimeState, todoResult.data, null, now);
+        if (runtimeResult.success) {
+          nextRuntimeState = runtimeResult.data;
+          await saveLaneRuntimeState(paths, nextRuntimeState);
+        }
+      }
+      updateLaneStatus(ctx, lane, nextRuntimeState);
+
+      return {
+        content: [{type: "text", text: buildTodoManagerSuccessMessage(action, params.todoId?.trim() ?? null, lane.id)}],
+        details: {ok: true, laneId: lane.id, todos: todoResult.data.todos, currentTodoId: nextRuntimeState.currentTodoId},
+      };
     },
   });
 
@@ -502,6 +641,39 @@ function parseTodoPriority(input: unknown): TodoPriority {
     return input as TodoPriority;
   }
   return "medium";
+}
+
+function parseTodoPriorityStrict(input: unknown): TodoPriority {
+  if (typeof input === "string" && todoPriorities.has(input as TodoPriority)) {
+    return input as TodoPriority;
+  }
+  throw new Error(`invalid priority: ${String(input ?? "")}`);
+}
+
+function parseTodoStatus(input: unknown): TodoStatus {
+  if (typeof input === "string" && todoStatuses.has(input as TodoStatus)) {
+    return input as TodoStatus;
+  }
+  throw new Error(`invalid status: ${String(input ?? "")}`);
+}
+
+function buildTodoManagerSuccessMessage(action: string, todoId: string | null, laneId: string): string {
+  switch (action) {
+    case "add_human":
+      return `Added a TODO in ${laneId}.`;
+    case "approve":
+      return `Approved TODO ${todoId ?? ""} in ${laneId}.`;
+    case "reject":
+      return `Rejected TODO ${todoId ?? ""} in ${laneId}.`;
+    case "edit":
+      return `Edited TODO ${todoId ?? ""} in ${laneId}.`;
+    case "set_status":
+      return `Updated status for TODO ${todoId ?? ""} in ${laneId}.`;
+    case "delete":
+      return `Deleted TODO ${todoId ?? ""} from ${laneId}.`;
+    default:
+      return `Updated TODOs for ${laneId}.`;
+  }
 }
 
 function formatTodos(todos: ReadonlyArray<LaneTodo>): string {
