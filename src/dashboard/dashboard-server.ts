@@ -3,11 +3,9 @@
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
 import {readFile} from "node:fs/promises";
 import {extname, resolve} from "node:path";
-import {approveProposedTodo, createHumanTodo, deleteTodo, editTodo, rejectProposedTodo, setTodoStatus} from "../todos/todo-transitions.js";
 import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
-  setRuntimeCurrentTodo,
   setRuntimeMode,
 } from "../runtime/runtime-state.js";
 import {
@@ -17,9 +15,7 @@ import {
   loadLaneEventLog,
   loadLaneRegistry,
   loadLaneRuntimeState,
-  loadLaneTodoFile,
   saveLaneRuntimeState,
-  saveLaneTodoFile,
 } from "../storage/lane-store.js";
 import {readTextFile, writeTextFile} from "../storage/json-files.js";
 import {findLaneControlledSessionInSessions, listControlledSessions, type PiControlledSession} from "../pi/pi-session-control.js";
@@ -31,10 +27,8 @@ import type {
   LaneSnapshot,
   SnapshotResponse,
 } from "./dashboard-contracts.js";
-import type {Lane, LaneRuntimeState, LaneTodo, TodoPriority, TodoStatus} from "../types.js";
+import type {Lane, LaneRuntimeState} from "../types.js";
 
-const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
-const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
 const messageDeliveryModes = new Set<DashboardMessageDeliveryMode>(["steer", "followUp"]);
 const CONTROLLED_SESSION_CACHE_TTL_MS = 1000;
 
@@ -88,7 +82,6 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
         const laneId = runtimeMatch[1] ?? "";
         const body = await readJsonBody(request);
         const lane = getLaneById(await loadLaneRegistry(paths), laneId);
-        const todoFile = await loadLaneTodoFile(paths, laneId);
         let runtimeState = await loadOrCreateRuntimeState(paths, lane);
         const now = new Date().toISOString();
 
@@ -96,11 +89,6 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
           const modeResult = setRuntimeMode(runtimeState, readRequiredString(body, "mode"), now);
           if (!modeResult.success) throw new Error(modeResult.issues.map(issue => issue.message).join("; "));
           runtimeState = modeResult.data;
-        }
-        if (Object.hasOwn(body, "currentTodoId")) {
-          const currentTodoResult = setRuntimeCurrentTodo(runtimeState, todoFile, readNullableString(body, "currentTodoId"), now);
-          if (!currentTodoResult.success) throw new Error(currentTodoResult.issues.map(issue => issue.message).join("; "));
-          runtimeState = currentTodoResult.data;
         }
 
         await saveLaneRuntimeState(paths, runtimeState);
@@ -172,69 +160,6 @@ export async function serveDashboard(options: {readonly configRootPath: string; 
         return;
       }
 
-      const createTodoMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/todos$/);
-      if (method === "POST" && createTodoMatch) {
-        const laneId = createTodoMatch[1] ?? "";
-        const body = await readJsonBody(request);
-        const title = readRequiredString(body, "title");
-        const priority = parseTodoPriority(body.priority);
-        const notes = readOptionalString(body, "notes");
-        const todoFile = await loadLaneTodoFile(paths, laneId);
-        const now = new Date().toISOString();
-        const result = createHumanTodo(todoFile, {id: createNextTodoId(todoFile.todos), title, priority, notes, now});
-        if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
-        await saveLaneTodoFile(paths, result.data);
-        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
-        return;
-      }
-
-      const todoMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/todos\/([a-z0-9-]+)$/);
-      if (todoMatch && method === "PATCH") {
-        const laneId = todoMatch[1] ?? "";
-        const todoId = todoMatch[2] ?? "";
-        const body = await readJsonBody(request);
-        const todoFile = await loadLaneTodoFile(paths, laneId);
-        const result = editTodo(todoFile, todoId, {
-          title: readOptionalString(body, "title"),
-          notes: readOptionalString(body, "notes"),
-          priority: body.priority === undefined ? null : parseTodoPriority(body.priority),
-        }, new Date().toISOString());
-        if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
-        await saveLaneTodoFile(paths, result.data);
-        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
-        return;
-      }
-
-      if (todoMatch && method === "DELETE") {
-        const laneId = todoMatch[1] ?? "";
-        const todoId = todoMatch[2] ?? "";
-        const todoFile = await loadLaneTodoFile(paths, laneId);
-        const result = deleteTodo(todoFile, todoId);
-        if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
-        await saveLaneTodoFile(paths, result.data);
-        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
-        return;
-      }
-
-      const actionMatch = url.pathname.match(/^\/api\/lanes\/([a-z0-9-]+)\/todos\/([a-z0-9-]+)\/(approve|reject|status)$/);
-      if (actionMatch && method === "POST") {
-        const laneId = actionMatch[1] ?? "";
-        const todoId = actionMatch[2] ?? "";
-        const action = actionMatch[3] ?? "";
-        const todoFile = await loadLaneTodoFile(paths, laneId);
-        const now = new Date().toISOString();
-        const result =
-          action === "approve"
-            ? approveProposedTodo(todoFile, todoId, now)
-            : action === "reject"
-              ? rejectProposedTodo(todoFile, todoId, now)
-              : setTodoStatus(todoFile, todoId, parseTodoStatus((await readJsonBody(request)).status), now);
-        if (!result.success) throw new Error(result.issues.map(issue => issue.message).join("; "));
-        await saveLaneTodoFile(paths, result.data);
-        sendJson(response, 200, {ok: true, lane: await buildLaneDetail(paths, laneId)});
-        return;
-      }
-
       sendJson(response, 404, {ok: false, error: `Not found: ${method} ${url.pathname}`});
     } catch (error) {
       sendJson(response, 400, {ok: false, error: error instanceof Error ? error.message : String(error)});
@@ -266,7 +191,6 @@ async function buildLaneDetailFromLane(
   lane: Lane,
   controlledSessions: ReadonlyArray<PiControlledSession>,
 ): Promise<LaneSnapshot> {
-  const todoFile = await loadLaneTodoFile(paths, lane.id);
   const runtimeState = await loadOrCreateRuntimeState(paths, lane);
   const contextText = await readLaneContextText(paths, lane.id);
   const eventLog = await loadLaneEventLog(paths, lane.id);
@@ -279,8 +203,6 @@ async function buildLaneDetailFromLane(
     liveSessionHealth,
     contextText,
     recentEvents: eventLog.events.slice().reverse(),
-    todos: todoFile.todos,
-    todoCounts: countTodos(todoFile.todos),
   };
 }
 
@@ -358,42 +280,9 @@ async function readLiveSessionHealth(
   };
 }
 
-function countTodos(todos: ReadonlyArray<LaneTodo>) {
-  return {
-    proposed: todos.filter(todo => todo.status === "proposed").length,
-    open: todos.filter(todo => todo.status === "open").length,
-    inProgress: todos.filter(todo => todo.status === "in_progress").length,
-    blocked: todos.filter(todo => todo.status === "blocked").length,
-    done: todos.filter(todo => todo.status === "done").length,
-    dropped: todos.filter(todo => todo.status === "dropped").length,
-  };
-}
-
-function groupTodos(todos: ReadonlyArray<LaneTodo>) {
-  return {
-    proposed: todos.filter(todo => todo.status === "proposed"),
-    open: todos.filter(todo => todo.status === "open"),
-    inProgress: todos.filter(todo => todo.status === "in_progress"),
-    blocked: todos.filter(todo => todo.status === "blocked"),
-    done: todos.filter(todo => todo.status === "done"),
-    dropped: todos.filter(todo => todo.status === "dropped"),
-  };
-}
-
 function createDefaultRuntimeState(lane: Lane) {
   const now = new Date().toISOString();
   return createStoppedRuntimeState(createStartedRuntimeState({lane, existingRuntimeState: null, now}), now);
-}
-
-function createNextTodoId(existingTodos: ReadonlyArray<LaneTodo>): string {
-  let highestValue = 0;
-  for (const todo of existingTodos) {
-    const numericPart = Number.parseInt(todo.id.replace("todo-", ""), 10);
-    if (!Number.isNaN(numericPart)) {
-      highestValue = Math.max(highestValue, numericPart);
-    }
-  }
-  return `todo-${String(highestValue + 1).padStart(3, "0")}`;
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -419,34 +308,6 @@ function readString(body: Record<string, unknown>, key: string): string {
     throw new Error(`missing or invalid field: ${key}`);
   }
   return value;
-}
-
-function readOptionalString(body: Record<string, unknown>, key: string): string | null {
-  const value = body[key];
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "string") throw new Error(`invalid field: ${key}`);
-  return value;
-}
-
-function readNullableString(body: Record<string, unknown>, key: string): string | null {
-  const value = body[key];
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "string") throw new Error(`invalid field: ${key}`);
-  return value;
-}
-
-function parseTodoPriority(input: unknown): TodoPriority {
-  if (typeof input !== "string" || !todoPriorities.has(input as TodoPriority)) {
-    return "medium";
-  }
-  return input as TodoPriority;
-}
-
-function parseTodoStatus(input: unknown): TodoStatus {
-  if (typeof input !== "string" || !todoStatuses.has(input as TodoStatus)) {
-    throw new Error(`invalid status: ${String(input)}`);
-  }
-  return input as TodoStatus;
 }
 
 function parseMessageDeliveryMode(input: unknown): DashboardMessageDeliveryMode {

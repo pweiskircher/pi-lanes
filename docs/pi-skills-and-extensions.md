@@ -9,27 +9,14 @@ Keep pi useful in a lane-oriented workflow without turning the lane system into 
 ### lane-context
 
 Purpose:
-- load lane metadata, TODOs, and runtime state
+- load lane metadata, runtime state, and saved context
 - explain the current lane to pi
-- remind pi that TODOs require explicit human start
+- keep lane startup grounded in files instead of chat memory
 
 Responsibilities:
 - read the current lane id and associated files
 - summarize the lane in a compact startup block
 - distinguish hot and cold lane context
-
-### lane-todo-hygiene
-
-Purpose:
-- teach pi how to work with lane TODOs safely
-
-Rules:
-- do not auto-start TODOs
-- use `proposed` for LLM-created TODOs
-- set `createdBy: "llm"`
-- set `needsReview: true`
-- require `proposalReason`
-- avoid turning vague ideas into TODOs unless they are actionable
 
 ### lane-status-summary
 
@@ -58,7 +45,7 @@ Focus:
 - stale lanes
 - blocked lanes
 - pending human input
-- TODO review backlog
+- missing context updates
 
 ## Extensions
 
@@ -66,17 +53,12 @@ Focus:
 
 Likely commands:
 - `/lane-status`
-- `/lane-brief`
-- `/lane-todos`
-- `/lane-add-todo`
-- `/lane-propose-todo`
-- `/lane-set-current-todo`
 
 ### lane runtime extension
 
 Purpose:
 - write current lane runtime state in a structured format
-- update operational state such as `currentTodoId`, `mode`, and live bridge info
+- update operational state such as `mode` and live bridge info
 
 ### lane dashboard bridge extension
 
@@ -88,7 +70,6 @@ Purpose:
 
 This repo now includes:
 - `skills/lane-context/SKILL.md`
-- `skills/lane-todo-hygiene/SKILL.md`
 - `skills/lane-status-summary/SKILL.md`
 - `extensions/lane-bridge.ts`
 - `.pi/settings.json`
@@ -96,14 +77,10 @@ This repo now includes:
 The extension is still intentionally small, but it now provides:
 - automatic lane session naming on session start when it can match the current lane id or repo
 - `/lane-status`
-- `/lane-todos`
-- `/lane-set-current-todo`
-- `lane_propose_todo` for LLM-proposed TODO capture
 - a localhost-only live-message bridge for active lane sessions
 
-The dashboard now complements those commands with HTTP-based editing for:
+The dashboard complements those commands with HTTP-based editing for:
 - lane context
-- lane TODO CRUD and review actions
 - live message delivery into active lane sessions
 - live idle/busy session health
 - recent lane event history
@@ -112,14 +89,12 @@ The dashboard now complements those commands with HTTP-based editing for:
 
 Implement in this order:
 1. `lane-context` skill
-2. `lane-todo-hygiene` skill
-3. lane runtime extension
-4. lane commands extension
-5. manager-oriented pieces
+2. lane runtime extension
+3. lane commands extension
+4. manager-oriented pieces
 
 ## Guardrails
 
 - Prefer plain files and explicit commands over hidden magic.
 - Keep lane rules visible in data and prompts.
 - Let the dashboard inspect and edit state, but keep transition validation centralized.
-- Avoid any extension that silently starts work on an open TODO.

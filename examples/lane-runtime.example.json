@@ -7,7 +7,6 @@
   "sessionId": "abc12345",
   "repoPath": "/Users/pat/Work/project",
   "mode": "working",
-  "currentTodoId": "todo-001",
   "messageBridge": {
     "port": 45123,
     "authToken": "example-bridge-token"

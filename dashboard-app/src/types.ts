@@ -1,6 +1,5 @@
 export type {
   DashboardMessageDeliveryMode,
-  LaneCounts,
   LaneHealth,
   LaneLiveOutput,
   LaneLiveOutputResponse,
@@ -18,6 +17,4 @@ export type {
   Lane,
   LaneEvent,
   LaneRuntimeState,
-  LaneTodo,
-  TodoStatus,
 } from "../../src/types";

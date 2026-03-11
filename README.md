@@ -7,7 +7,6 @@
 It helps you split ongoing work into named lanes, each with its own:
 - repo association
 - lane context
-- TODOs
 - runtime state
 - event history
 - dashboard view
@@ -16,8 +15,7 @@ It helps you split ongoing work into named lanes, each with its own:
 
 - create and manage lanes from the CLI
 - start a lane in pi with lane-aware onboarding
-- keep TODOs scoped to a lane
-- let LLMs propose TODOs without auto-starting them
+- keep lane context and runtime state in plain files
 - expose lane state to a local dashboard
 - send messages into active lane sessions from the dashboard
 - show recent conversation, live assistant output, and lane events
@@ -26,9 +24,8 @@ It helps you split ongoing work into named lanes, each with its own:
 
 - **Lane**: a named unit of work
 - **Context**: the saved notes and references for that lane
-- **TODOs**: lane-scoped work items
-- **Proposed TODOs**: LLM-suggested TODOs that require human review
 - **Runtime state**: what the lane is doing right now
+- **Events**: recent lane activity useful for dashboard review
 
 ## Install
 
@@ -98,10 +95,7 @@ Pi helps capture:
 - the current desired outcome
 - useful references, files, commands, or links
 - constraints and guardrails
-- whether to draft proposed TODOs
-
-Lane TODOs do **not** auto-start.
-LLM-created TODOs stay **proposed** until a human approves them.
+- the next concrete step worth capturing
 
 ## Dashboard
 
@@ -144,7 +138,6 @@ Each lane gets its own directory:
 Important files:
 - `context.md`
 - `state/runtime.json`
-- `state/todos.json`
 - `state/events.json`
 
 ## Repo layout

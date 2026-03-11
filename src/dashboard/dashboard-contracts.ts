@@ -1,5 +1,5 @@
 import type {PiControlledSession} from "../pi/pi-session-control.js";
-import type {Lane, LaneEvent, LaneRuntimeState, LaneTodo} from "../types.js";
+import type {Lane, LaneEvent, LaneRuntimeState} from "../types.js";
 
 export type DashboardMessageDeliveryMode = "steer" | "followUp";
 
@@ -18,15 +18,6 @@ export type LaneHealth = {
   readonly lastEventSummary: string | null;
 };
 
-export type LaneCounts = {
-  readonly proposed: number;
-  readonly open: number;
-  readonly inProgress: number;
-  readonly blocked: number;
-  readonly done: number;
-  readonly dropped: number;
-};
-
 export type LaneSnapshot = {
   readonly lane: Lane;
   readonly runtimeState: LaneRuntimeState;
@@ -34,8 +25,6 @@ export type LaneSnapshot = {
   readonly liveSessionHealth: LaneHealth;
   readonly contextText: string;
   readonly recentEvents: ReadonlyArray<LaneEvent>;
-  readonly todos: ReadonlyArray<LaneTodo>;
-  readonly todoCounts: LaneCounts;
 };
 
 export type SnapshotResponse = {

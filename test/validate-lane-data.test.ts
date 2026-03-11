@@ -1,22 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseLaneTodoFile} from "../src/shared/validate-lane-data.js";
+import {parseLaneEventLog, parseLaneRuntimeState} from "../src/shared/validate-lane-data.js";
 
-test("parseLaneTodoFile accepts approved llm-created todos", () => {
-  const result = parseLaneTodoFile({
+test("parseLaneRuntimeState accepts runtime state without a current todo", () => {
+  const result = parseLaneRuntimeState({
     laneId: "pi-lanes",
-    todos: [
+    isActive: true,
+    startedAt: "2026-03-08T14:00:00Z",
+    updatedAt: "2026-03-08T14:10:00Z",
+    sessionName: "pi-lanes",
+    sessionId: "abc123",
+    repoPath: "/tmp/repo",
+    mode: "interactive",
+    messageBridge: {
+      port: 45123,
+      authToken: "example-token",
+    },
+  });
+
+  assert.equal(result.success, true);
+});
+
+test("parseLaneEventLog accepts status events", () => {
+  const result = parseLaneEventLog({
+    laneId: "pi-lanes",
+    events: [
       {
-        id: "todo-001",
-        title: "Investigate CI flow",
-        notes: null,
-        status: "open",
-        priority: "high",
-        createdBy: "llm",
-        needsReview: false,
-        proposalReason: "Useful follow-up work.",
-        createdAt: "2026-03-08T14:00:00Z",
-        updatedAt: "2026-03-08T14:10:00Z",
+        timestamp: "2026-03-08T14:10:00Z",
+        kind: "status",
+        summary: "Lane summary updated",
+        details: null,
       },
     ],
   });
@@ -24,50 +37,17 @@ test("parseLaneTodoFile accepts approved llm-created todos", () => {
   assert.equal(result.success, true);
 });
 
-test("parseLaneTodoFile rejects proposed llm todos that no longer require review", () => {
-  const result = parseLaneTodoFile({
+test("parseLaneRuntimeState rejects invalid modes", () => {
+  const result = parseLaneRuntimeState({
     laneId: "pi-lanes",
-    todos: [
-      {
-        id: "todo-001",
-        title: "Investigate CI flow",
-        notes: null,
-        status: "proposed",
-        priority: "high",
-        createdBy: "llm",
-        needsReview: false,
-        proposalReason: "Useful follow-up work.",
-        createdAt: "2026-03-08T14:00:00Z",
-        updatedAt: "2026-03-08T14:10:00Z",
-      },
-    ],
+    isActive: true,
+    updatedAt: "2026-03-08T14:10:00Z",
+    sessionName: "pi-lanes",
+    repoPath: "/tmp/repo",
+    mode: "flying",
   });
 
   assert.equal(result.success, false);
   if (result.success) return;
-  assert.match(result.issues[0]?.message ?? "", /must require review/);
-});
-
-test("parseLaneTodoFile rejects reviewed llm todos that still require review", () => {
-  const result = parseLaneTodoFile({
-    laneId: "pi-lanes",
-    todos: [
-      {
-        id: "todo-001",
-        title: "Investigate CI flow",
-        notes: null,
-        status: "open",
-        priority: "high",
-        createdBy: "llm",
-        needsReview: true,
-        proposalReason: "Useful follow-up work.",
-        createdAt: "2026-03-08T14:00:00Z",
-        updatedAt: "2026-03-08T14:10:00Z",
-      },
-    ],
-  });
-
-  assert.equal(result.success, false);
-  if (result.success) return;
-  assert.match(result.issues[0]?.message ?? "", /cannot still require review/);
+  assert.match(result.issues[0]?.message ?? "", /expected one of/);
 });

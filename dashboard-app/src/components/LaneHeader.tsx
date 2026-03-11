@@ -23,7 +23,6 @@ export function LaneHeader({lane}: LaneHeaderProps) {
       </div>
       <div class="lane-pills header-pills">
         <span class="pill">mode {runtime?.mode ?? "stopped"}</span>
-        <span class="pill">todo {runtime?.currentTodoId ?? "—"}</span>
         <span class="pill">health {lane.liveSessionHealth.ok ? (lane.liveSessionHealth.isIdle ? "idle" : "busy") : "offline"}</span>
         <span class="pill">activity {formatRelativeTime(lane.liveSessionHealth.lastActivityAt)}</span>
         <span class="pill">updated {formatTimestamp(lane.liveSessionHealth.lastActivityAt)}</span>

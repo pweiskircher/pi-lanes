@@ -4,8 +4,8 @@ import {access, mkdir, rm} from "node:fs/promises";
 import {constants as fsConstants} from "node:fs";
 import {homedir} from "node:os";
 import {resolve} from "node:path";
-import {parseLaneEventLog, parseLaneRegistry, parseLaneRuntimeState, parseLaneTodoFile} from "../shared/validate-lane-data.js";
-import type {Lane, LaneEventLog, LaneRegistry, LaneRuntimeState, LaneTodoFile} from "../types.js";
+import {parseLaneEventLog, parseLaneRegistry, parseLaneRuntimeState} from "../shared/validate-lane-data.js";
+import type {Lane, LaneEventLog, LaneRegistry, LaneRuntimeState} from "../types.js";
 import {readJsonFile, readTextFile, writeJsonFile} from "../storage/json-files.js";
 
 export type LanePaths = {
@@ -64,27 +64,6 @@ export async function assertRepoExists(repoPath: string): Promise<void> {
   } catch {
     throw new Error(`repo path does not exist or is not readable: ${repoPath}`);
   }
-}
-
-export async function loadLaneTodoFile(paths: LanePaths, laneId: string): Promise<LaneTodoFile> {
-  const todoPath = getLaneTodoPath(paths, laneId);
-  try {
-    const parsed = parseLaneTodoFile(await readJsonFile(todoPath));
-    if (!parsed.success) {
-      throw new Error(formatIssues(`invalid lane todo file at ${todoPath}`, parsed.issues));
-    }
-    return parsed.data;
-  } catch (error) {
-    if (isFileNotFoundError(error)) {
-      return {laneId, todos: []};
-    }
-    throw error;
-  }
-}
-
-export async function saveLaneTodoFile(paths: LanePaths, todoFile: LaneTodoFile): Promise<void> {
-  await ensureLaneHome(paths);
-  await writeJsonFile(getLaneTodoPath(paths, todoFile.laneId), todoFile);
 }
 
 export async function loadLaneRuntimeState(paths: LanePaths, laneId: string): Promise<LaneRuntimeState | null> {
@@ -147,10 +126,6 @@ export function getDefaultLanePaths(rootPath = getDefaultLaneHome()): LanePaths 
 
 export function getLaneDirectoryPath(paths: LanePaths, laneId: string): string {
   return resolve(paths.lanesDirectoryPath, laneId);
-}
-
-export function getLaneTodoPath(paths: LanePaths, laneId: string): string {
-  return resolve(getLaneDirectoryPath(paths, laneId), "state/todos.json");
 }
 
 export function getLaneRuntimePath(paths: LanePaths, laneId: string): string {

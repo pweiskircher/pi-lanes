@@ -29,6 +29,6 @@ test("formatInitialLaneContext includes the onboarding target sections", () => {
 });
 
 test("needsLaneOnboarding returns false for a customized context", () => {
-  const customizedContext = `# ${lane.id}\n\nPurpose:\n- Fix a PDF\/UA bug in the content editor.\n- Prepare the next implementation step.\n\nClassification:\n- investigation\n\nCurrent status:\n- setup only for now\n\nConstraints:\n- Do not start work automatically.\n\nReferences:\n- Repo: /tmp/repo\n- Ticket/issue: ABC-123\n- Branch/PR/commit: none yet\n- Key files/dirs: src/, test/\n- Useful commands/docs: npm test\n\nNext:\n- No TODOs yet.\n`;
+  const customizedContext = `# ${lane.id}\n\nPurpose:\n- Fix a PDF\/UA bug in the content editor.\n- Prepare the next implementation step.\n\nClassification:\n- investigation\n\nCurrent status:\n- setup only for now\n\nConstraints:\n- Do not start work automatically.\n\nReferences:\n- Repo: /tmp/repo\n- Ticket/issue: ABC-123\n- Branch/PR/commit: none yet\n- Key files/dirs: src/, test/\n- Useful commands/docs: npm test\n\nNext:\n- Confirm the next implementation slice.\n`;
   assert.equal(needsLaneOnboarding({lane, laneContext: customizedContext}), false);
 });

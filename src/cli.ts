@@ -9,21 +9,12 @@ import {fileURLToPath} from "node:url";
 import {Command} from "commander";
 import {createLane} from "./lanes/lane-registry-transitions.js";
 import {formatInitialLaneContext, needsLaneOnboarding} from "./lanes/lane-context.js";
-import {
-  approveProposedTodo,
-  createHumanTodo,
-  deleteTodo,
-  editTodo,
-  rejectProposedTodo,
-  setTodoStatus,
-} from "./todos/todo-transitions.js";
 import {buildDoctorLaneReport, buildDoctorReport} from "./lanes/doctor.js";
 import {formatLaneBriefing} from "./lanes/lane-briefing.js";
 import {formatLaneStartupPrompt} from "./lanes/lane-startup-prompt.js";
 import {
   createStartedRuntimeState,
   createStoppedRuntimeState,
-  setRuntimeCurrentTodo,
   setRuntimeMode,
 } from "./runtime/runtime-state.js";
 import {
@@ -34,33 +25,23 @@ import {
   getLaneById,
   getLaneContextPath,
   getLaneRuntimePath,
-  getLaneTodoPath,
   loadLaneRegistry,
   loadLaneRuntimeState,
-  loadLaneTodoFile,
   saveLaneRegistry,
   saveLaneRuntimeState,
-  saveLaneTodoFile,
 } from "./storage/lane-store.js";
 import {readTextFile, writeTextFile} from "./storage/json-files.js";
 import {serveDashboard} from "./dashboard/dashboard-server.js";
 import {ensurePiExists, launchPi} from "./pi/pi-launch.js";
 import {hasSavedPiSessionForCwd} from "./pi/pi-session-discovery.js";
 import type {
-  CreateHumanTodoOptions,
   Lane,
   LanePriority,
   LaneRuntimeMode,
   LaneRuntimeState,
   LaneStatus,
-  LaneTodo,
-  LaneTodoFile,
-  TodoPriority,
-  TodoStatus,
 } from "./types.js";
 
-const todoPriorities = new Set<TodoPriority>(["low", "medium", "high"]);
-const todoStatuses = new Set<TodoStatus>(["open", "in_progress", "blocked", "done", "dropped"]);
 const runtimeModes = new Set<LaneRuntimeMode>(["idle", "interactive", "working", "waiting_for_input", "blocked", "stopped"]);
 const lanePriorities = new Set<LanePriority>(["main", "side", "parked"]);
 const laneStatuses = new Set<LaneStatus>(["active", "paused", "archived"]);
@@ -95,18 +76,6 @@ type NewLaneOptions = JsonOption & {
 
 type DeleteLaneOptions = JsonOption & {
   readonly yes?: boolean;
-};
-
-type TodoAddOptions = JsonOption & {
-  readonly title?: string;
-  readonly priority?: string;
-  readonly notes?: string;
-};
-
-type TodoEditOptions = JsonOption & {
-  readonly title?: string;
-  readonly priority?: string;
-  readonly notes?: string;
 };
 
 type ContextEditOptions = JsonOption & {
@@ -203,76 +172,6 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
       await runWithHandling(() => runDashboardServeCommand(options));
     });
 
-  const todo = program.command("todo").description("TODO commands");
-  todo
-    .command("list")
-    .argument("<laneId>")
-    .description("List TODOs for a lane")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, options: JsonOption) => {
-      await runWithHandling(() => runTodoListCommand(laneId, createCommandContext(options)));
-    });
-  todo
-    .command("add")
-    .argument("<laneId>")
-    .description("Add a TODO")
-    .requiredOption("--title <title>", "TODO title")
-    .option("--priority <priority>", "TODO priority")
-    .option("--notes <notes>", "TODO notes")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, options: TodoAddOptions) => {
-      await runWithHandling(() => runTodoAddCommand(laneId, createCommandContext(options), options));
-    });
-  todo
-    .command("approve")
-    .argument("<laneId>")
-    .argument("<todoId>")
-    .description("Approve an LLM-proposed TODO")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, todoId: string, options: JsonOption) => {
-      await runWithHandling(() => runTodoApproveCommand(laneId, todoId, createCommandContext(options)));
-    });
-  todo
-    .command("reject")
-    .argument("<laneId>")
-    .argument("<todoId>")
-    .description("Reject an LLM-proposed TODO")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, todoId: string, options: JsonOption) => {
-      await runWithHandling(() => runTodoRejectCommand(laneId, todoId, createCommandContext(options)));
-    });
-  todo
-    .command("edit")
-    .argument("<laneId>")
-    .argument("<todoId>")
-    .description("Edit a TODO")
-    .option("--title <title>", "New title")
-    .option("--priority <priority>", "New priority")
-    .option("--notes <notes>", "New notes")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, todoId: string, options: TodoEditOptions) => {
-      await runWithHandling(() => runTodoEditCommand(laneId, todoId, createCommandContext(options), options));
-    });
-  todo
-    .command("delete")
-    .argument("<laneId>")
-    .argument("<todoId>")
-    .description("Delete a TODO")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, todoId: string, options: JsonOption) => {
-      await runWithHandling(() => runTodoDeleteCommand(laneId, todoId, createCommandContext(options)));
-    });
-  todo
-    .command("set-status")
-    .argument("<laneId>")
-    .argument("<todoId>")
-    .argument("<status>")
-    .description("Set TODO status")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, todoId: string, status: string, options: JsonOption) => {
-      await runWithHandling(() => runTodoSetStatusCommand(laneId, todoId, status, createCommandContext(options)));
-    });
-
   const runtime = program.command("runtime").description("Runtime commands");
   runtime
     .command("show")
@@ -283,23 +182,6 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
       await runWithHandling(() => runRuntimeShowCommand(laneId, createCommandContext(options)));
     });
   runtime
-    .command("set-current-todo")
-    .argument("<laneId>")
-    .argument("<todoId>")
-    .description("Set current runtime TODO")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, todoId: string, options: JsonOption) => {
-      await runWithHandling(() => runRuntimeSetCurrentTodoCommand(laneId, todoId, createCommandContext(options)));
-    });
-  runtime
-    .command("clear-current-todo")
-    .argument("<laneId>")
-    .description("Clear current runtime TODO")
-    .option("--json", "Output JSON")
-    .action(async (laneId: string, options: JsonOption) => {
-      await runWithHandling(() => runRuntimeClearCurrentTodoCommand(laneId, createCommandContext(options)));
-    });
-  runtime
     .command("set-mode")
     .argument("<laneId>")
     .argument("<mode>")
@@ -308,6 +190,7 @@ export async function main(argv: ReadonlyArray<string> = process.argv): Promise<
     .action(async (laneId: string, mode: string, options: JsonOption) => {
       await runWithHandling(() => runRuntimeSetModeCommand(laneId, mode, createCommandContext(options)));
     });
+
   const contextCommand = program.command("context").description("Lane context commands");
   contextCommand
     .command("show")
@@ -360,18 +243,17 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
   await assertRepoExists(lane.repoPath);
 
-  const todoFile = await loadLaneTodoFile(paths, lane.id);
   const existingRuntimeState = await loadLaneRuntimeState(paths, lane.id);
   const now = toIsoNow();
   const runtimeState = createStartedRuntimeState({lane, existingRuntimeState, now});
 
   await saveLaneRuntimeState(paths, runtimeState);
 
-  const briefing = buildLaneDetail(lane, runtimeState, todoFile);
+  const briefing = buildLaneDetail(lane, runtimeState);
   if (context.outputMode === "json") {
     printJson({ok: true, action: "start", lane: briefing, dryRun});
   } else {
-    console.log(formatLaneBriefing({lane, runtimeState, todoFile}));
+    console.log(formatLaneBriefing({lane, runtimeState}));
     console.log("");
   }
 
@@ -388,7 +270,7 @@ async function runStartCommand(laneId: string, context: CommandContext, options:
   const onboardingNeeded = needsLaneOnboarding({lane, laneContext});
   const initialMessages = continueSession
     ? []
-    : [formatLaneStartupPrompt({lane, runtimeState, todoFile, laneContext, needsOnboarding: onboardingNeeded})];
+    : [formatLaneStartupPrompt({lane, runtimeState, laneContext, needsOnboarding: onboardingNeeded})];
   const toolRoot = getToolRoot();
   const exitCode = await launchPi({
     cwd: lane.repoPath,
@@ -409,18 +291,14 @@ async function runDashboardSnapshotCommand(context: CommandContext): Promise<num
   const paths = getDefaultLanePaths();
   const lanes = await loadLaneRegistry(paths);
   const snapshot = await Promise.all(
-    lanes.map(async lane => {
-      const runtimeState = await loadLaneRuntimeState(paths, lane.id);
-      const todoFile = await loadLaneTodoFile(paths, lane.id);
-      return buildLaneDetail(lane, runtimeState, todoFile);
-    }),
+    lanes.map(async lane => buildLaneDetail(lane, await loadLaneRuntimeState(paths, lane.id))),
   );
 
   if (context.outputMode === "json") {
     printJson({ok: true, generatedAt: toIsoNow(), lanes: snapshot});
   } else {
     for (const lane of snapshot) {
-      console.log(`${lane.id}  ${lane.stateLabel}  open=${lane.todoCounts.open}  proposed=${lane.todoCounts.proposed}`);
+      console.log(`${lane.id}  ${lane.stateLabel}`);
     }
   }
   return 0;
@@ -447,23 +325,18 @@ async function runDoctorCommand(context: CommandContext): Promise<number> {
 
   const laneReports = await Promise.all(
     lanes.map(async lane => {
-      const todoPath = getLaneTodoPath(paths, lane.id);
       const runtimePath = getLaneRuntimePath(paths, lane.id);
       const contextPath = getLaneContextPath(paths, lane.id);
       const repoExists = existsSync(lane.repoPath);
-      const todoFileExists = existsSync(todoPath);
       const runtimeFileExists = existsSync(runtimePath);
       const contextFileExists = existsSync(contextPath);
-      const todoFile = await loadLaneTodoFile(paths, lane.id);
       const runtimeState = await loadLaneRuntimeState(paths, lane.id);
 
       return buildDoctorLaneReport({
         lane,
         repoExists,
-        todoFileExists,
         runtimeFileExists,
         contextFileExists,
-        todoFile,
         runtimeState,
       });
     }),
@@ -481,7 +354,6 @@ async function runDoctorCommand(context: CommandContext): Promise<number> {
   for (const lane of report.lanes) {
     console.log(`\n${lane.laneId}`);
     console.log(`  repo: ${lane.repoExists ? "ok" : "missing"}`);
-    console.log(`  todo file: ${lane.todoFileExists ? "ok" : "missing"}`);
     console.log(`  runtime file: ${lane.runtimeFileExists ? "ok" : "missing"}`);
     console.log(`  context file: ${lane.contextFileExists ? "ok" : "missing"}`);
     if (lane.issues.length > 0) {
@@ -538,7 +410,6 @@ async function runNewLaneCommand(context: CommandContext, laneIdArgument: string
   }
 
   await saveLaneRegistry(paths, result.data);
-  await saveLaneTodoFile(paths, {laneId, todos: []});
 
   const createdLane = mustFindLane(result.data, laneId);
   const now = toIsoNow();
@@ -595,11 +466,7 @@ async function runListCommand(context: CommandContext): Promise<number> {
   const paths = getDefaultLanePaths();
   const lanes = await loadLaneRegistry(paths);
   const summaries = await Promise.all(
-    lanes.map(async lane => {
-      const runtimeState = await loadLaneRuntimeState(paths, lane.id);
-      const todoFile = await loadLaneTodoFile(paths, lane.id);
-      return buildLaneSummary(lane, runtimeState, todoFile);
-    }),
+    lanes.map(async lane => buildLaneSummary(lane, await loadLaneRuntimeState(paths, lane.id))),
   );
 
   if (context.outputMode === "json") {
@@ -608,7 +475,7 @@ async function runListCommand(context: CommandContext): Promise<number> {
   }
 
   for (const summary of summaries) {
-    console.log(`${summary.id}  ${summary.stateLabel}  open=${summary.todoCounts.open}  proposed=${summary.todoCounts.proposed}`);
+    console.log(`${summary.id}  ${summary.stateLabel}`);
   }
 
   return 0;
@@ -617,167 +484,15 @@ async function runListCommand(context: CommandContext): Promise<number> {
 async function runShowCommand(laneId: string, context: CommandContext): Promise<number> {
   const paths = getDefaultLanePaths();
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
-  const todoFile = await loadLaneTodoFile(paths, lane.id);
   const runtimeState = await loadLaneRuntimeState(paths, lane.id);
-  const detail = buildLaneDetail(lane, runtimeState, todoFile);
+  const detail = buildLaneDetail(lane, runtimeState);
 
   if (context.outputMode === "json") {
     printJson({ok: true, lane: detail});
     return 0;
   }
 
-  console.log(formatLaneBriefing({lane, runtimeState, todoFile}));
-  if (todoFile.todos.length > 0) {
-    console.log("\nTODOs:");
-    for (const todo of todoFile.todos) {
-      console.log(`- ${todo.id} [${todo.status}] (${todo.priority}) ${todo.title}`);
-    }
-  }
-
-  return 0;
-}
-
-async function runTodoListCommand(laneId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths();
-  getLaneById(await loadLaneRegistry(paths), laneId);
-  const todoFile = await loadLaneTodoFile(paths, laneId);
-
-  if (context.outputMode === "json") {
-    printJson({ok: true, laneId, todos: todoFile.todos, grouped: groupTodos(todoFile)});
-    return 0;
-  }
-
-  if (todoFile.todos.length === 0) {
-    console.log(`No TODOs for ${laneId}`);
-    return 0;
-  }
-
-  for (const todo of todoFile.todos) {
-    console.log(`- ${todo.id} [${todo.status}] (${todo.priority}) ${todo.title}`);
-  }
-  return 0;
-}
-
-async function runTodoAddCommand(laneId: string, context: CommandContext, options: TodoAddOptions): Promise<number> {
-  if (!options.title) {
-    throw new Error("missing required flag: --title");
-  }
-
-  const priority = parseTodoPriority(options.priority ?? "medium");
-  const notes = options.notes ?? null;
-  const paths = getDefaultLanePaths();
-  const lane = getLaneById(await loadLaneRegistry(paths), laneId);
-  const todoFile = await loadLaneTodoFile(paths, lane.id);
-  const now = toIsoNow();
-  const result = createHumanTodo(todoFile, createHumanTodoOptions({title: options.title, priority, notes, now, existingTodos: todoFile.todos}));
-  if (!result.success) {
-    throw new Error(result.issues.map(issue => issue.message).join("; "));
-  }
-
-  await saveLaneTodoFile(paths, result.data);
-  const createdTodo = mustFindTodo(result.data, result.data.todos[result.data.todos.length - 1]?.id ?? "");
-  if (context.outputMode === "json") {
-    printJson({ok: true, action: "todo.add", laneId: lane.id, todo: createdTodo});
-  } else {
-    console.log(`Created TODO in ${lane.id}: ${options.title}`);
-  }
-  return 0;
-}
-
-async function runTodoApproveCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths();
-  getLaneById(await loadLaneRegistry(paths), laneId);
-  const todoFile = await loadLaneTodoFile(paths, laneId);
-  const result = approveProposedTodo(todoFile, todoId, toIsoNow());
-  if (!result.success) {
-    throw new Error(result.issues.map(issue => issue.message).join("; "));
-  }
-
-  await saveLaneTodoFile(paths, result.data);
-  const todo = mustFindTodo(result.data, todoId);
-  if (context.outputMode === "json") {
-    printJson({ok: true, action: "todo.approve", laneId, todo});
-  } else {
-    console.log(`Approved TODO ${todoId} in ${laneId}`);
-  }
-  return 0;
-}
-
-async function runTodoRejectCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths();
-  getLaneById(await loadLaneRegistry(paths), laneId);
-  const todoFile = await loadLaneTodoFile(paths, laneId);
-  const result = rejectProposedTodo(todoFile, todoId, toIsoNow());
-  if (!result.success) {
-    throw new Error(result.issues.map(issue => issue.message).join("; "));
-  }
-
-  await saveLaneTodoFile(paths, result.data);
-  const todo = mustFindTodo(result.data, todoId);
-  if (context.outputMode === "json") {
-    printJson({ok: true, action: "todo.reject", laneId, todo});
-  } else {
-    console.log(`Rejected TODO ${todoId} in ${laneId}`);
-  }
-  return 0;
-}
-
-async function runTodoEditCommand(laneId: string, todoId: string, context: CommandContext, options: TodoEditOptions): Promise<number> {
-  const priority = options.priority === undefined ? null : parseTodoPriority(options.priority);
-  const paths = getDefaultLanePaths();
-  getLaneById(await loadLaneRegistry(paths), laneId);
-  const todoFile = await loadLaneTodoFile(paths, laneId);
-  const result = editTodo(todoFile, todoId, {title: options.title ?? null, notes: options.notes ?? null, priority}, toIsoNow());
-  if (!result.success) {
-    throw new Error(result.issues.map(issue => issue.message).join("; "));
-  }
-
-  await saveLaneTodoFile(paths, result.data);
-  const todo = mustFindTodo(result.data, todoId);
-  if (context.outputMode === "json") {
-    printJson({ok: true, action: "todo.edit", laneId, todo});
-  } else {
-    console.log(`Edited TODO ${todoId} in ${laneId}`);
-  }
-  return 0;
-}
-
-async function runTodoDeleteCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
-  const paths = getDefaultLanePaths();
-  getLaneById(await loadLaneRegistry(paths), laneId);
-  const todoFile = await loadLaneTodoFile(paths, laneId);
-  const deletedTodo = mustFindTodo(todoFile, todoId);
-  const result = deleteTodo(todoFile, todoId);
-  if (!result.success) {
-    throw new Error(result.issues.map(issue => issue.message).join("; "));
-  }
-
-  await saveLaneTodoFile(paths, result.data);
-  if (context.outputMode === "json") {
-    printJson({ok: true, action: "todo.delete", laneId, todo: deletedTodo});
-  } else {
-    console.log(`Deleted TODO ${todoId} from ${laneId}`);
-  }
-  return 0;
-}
-
-async function runTodoSetStatusCommand(laneId: string, todoId: string, statusValue: string, context: CommandContext): Promise<number> {
-  const status = parseTodoStatus(statusValue);
-  const paths = getDefaultLanePaths();
-  getLaneById(await loadLaneRegistry(paths), laneId);
-  const todoFile = await loadLaneTodoFile(paths, laneId);
-  const result = setTodoStatus(todoFile, todoId, status, toIsoNow());
-  if (!result.success) {
-    throw new Error(result.issues.map(issue => issue.message).join("; "));
-  }
-
-  await saveLaneTodoFile(paths, result.data);
-  const todo = mustFindTodo(result.data, todoId);
-  if (context.outputMode === "json") {
-    printJson({ok: true, action: "todo.set-status", laneId, todo});
-  } else {
-    console.log(`Set TODO ${todoId} in ${laneId} to ${status}`);
-  }
+  console.log(formatLaneBriefing({lane, runtimeState}));
   return 0;
 }
 
@@ -789,26 +504,6 @@ async function runRuntimeShowCommand(laneId: string, context: CommandContext): P
     console.log(JSON.stringify(runtimeState, null, 2));
   }
   return 0;
-}
-
-async function runRuntimeSetCurrentTodoCommand(laneId: string, todoId: string, context: CommandContext): Promise<number> {
-  const {paths, runtimeState, todoFile} = await loadRuntimeCommandState(laneId);
-  const result = setRuntimeCurrentTodo(runtimeState, todoFile, todoId, toIsoNow());
-  if (!result.success) {
-    throw new Error(result.issues.map(issue => issue.message).join("; "));
-  }
-  await saveLaneRuntimeState(paths, result.data);
-  return printRuntimeMutationResult(context, "runtime.set-current-todo", laneId, result.data, `Set current todo for ${laneId} to ${todoId}`);
-}
-
-async function runRuntimeClearCurrentTodoCommand(laneId: string, context: CommandContext): Promise<number> {
-  const {paths, runtimeState, todoFile} = await loadRuntimeCommandState(laneId);
-  const result = setRuntimeCurrentTodo(runtimeState, todoFile, null, toIsoNow());
-  if (!result.success) {
-    throw new Error(result.issues.map(issue => issue.message).join("; "));
-  }
-  await saveLaneRuntimeState(paths, result.data);
-  return printRuntimeMutationResult(context, "runtime.clear-current-todo", laneId, result.data, `Cleared current todo for ${laneId}`);
 }
 
 async function runRuntimeSetModeCommand(laneId: string, mode: string, context: CommandContext): Promise<number> {
@@ -875,15 +570,13 @@ async function runContextEditCommand(laneId: string, context: CommandContext, op
 async function loadRuntimeCommandState(laneId: string): Promise<{
   readonly paths: ReturnType<typeof getDefaultLanePaths>;
   readonly runtimeState: LaneRuntimeState;
-  readonly todoFile: LaneTodoFile;
 }> {
   const paths = getDefaultLanePaths();
   const lane = getLaneById(await loadLaneRegistry(paths), laneId);
   const now = toIsoNow();
   const runtimeState =
     (await loadLaneRuntimeState(paths, laneId)) ?? createStoppedRuntimeState(createStartedRuntimeState({lane, existingRuntimeState: null, now}), now);
-  const todoFile = await loadLaneTodoFile(paths, laneId);
-  return {paths, runtimeState, todoFile};
+  return {paths, runtimeState};
 }
 
 function printRuntimeMutationResult(
@@ -901,7 +594,7 @@ function printRuntimeMutationResult(
   return 0;
 }
 
-function buildLaneSummary(lane: Lane, runtimeState: LaneRuntimeState | null, todoFile: LaneTodoFile) {
+function buildLaneSummary(lane: Lane, runtimeState: LaneRuntimeState | null) {
   return {
     id: lane.id,
     title: lane.title,
@@ -910,49 +603,15 @@ function buildLaneSummary(lane: Lane, runtimeState: LaneRuntimeState | null, tod
     jjBookmark: lane.jjBookmark,
     isActive: runtimeState?.isActive ?? false,
     stateLabel: runtimeState?.isActive ? runtimeState.mode : "cold",
-    currentTodoId: runtimeState?.currentTodoId ?? null,
-    todoCounts: countTodos(todoFile),
   };
 }
 
-function buildLaneDetail(lane: Lane, runtimeState: LaneRuntimeState | null, todoFile: LaneTodoFile) {
+function buildLaneDetail(lane: Lane, runtimeState: LaneRuntimeState | null) {
   return {
-    ...buildLaneSummary(lane, runtimeState, todoFile),
+    ...buildLaneSummary(lane, runtimeState),
     lane,
     runtimeState,
-    todos: todoFile.todos,
-    groupedTodos: groupTodos(todoFile),
   };
-}
-
-function countTodos(todoFile: LaneTodoFile) {
-  return {
-    proposed: todoFile.todos.filter(todo => todo.status === "proposed").length,
-    open: todoFile.todos.filter(todo => todo.status === "open").length,
-    inProgress: todoFile.todos.filter(todo => todo.status === "in_progress").length,
-    blocked: todoFile.todos.filter(todo => todo.status === "blocked").length,
-    done: todoFile.todos.filter(todo => todo.status === "done").length,
-    dropped: todoFile.todos.filter(todo => todo.status === "dropped").length,
-  };
-}
-
-function groupTodos(todoFile: LaneTodoFile) {
-  return {
-    proposed: todoFile.todos.filter(todo => todo.status === "proposed"),
-    open: todoFile.todos.filter(todo => todo.status === "open"),
-    inProgress: todoFile.todos.filter(todo => todo.status === "in_progress"),
-    blocked: todoFile.todos.filter(todo => todo.status === "blocked"),
-    done: todoFile.todos.filter(todo => todo.status === "done"),
-    dropped: todoFile.todos.filter(todo => todo.status === "dropped"),
-  };
-}
-
-function mustFindTodo(todoFile: LaneTodoFile, todoId: string): LaneTodo {
-  const todo = todoFile.todos.find(candidate => candidate.id === todoId);
-  if (!todo) {
-    throw new Error(`todo not found after operation: ${todoId}`);
-  }
-  return todo;
 }
 
 function mustFindLane(lanes: ReadonlyArray<Lane>, laneId: string): Lane {
@@ -961,48 +620,6 @@ function mustFindLane(lanes: ReadonlyArray<Lane>, laneId: string): Lane {
     throw new Error(`lane not found after operation: ${laneId}`);
   }
   return lane;
-}
-
-function createHumanTodoOptions(options: {
-  readonly title: string;
-  readonly priority: TodoPriority;
-  readonly notes: string | null;
-  readonly now: string;
-  readonly existingTodos: ReadonlyArray<LaneTodo>;
-}): CreateHumanTodoOptions {
-  return {
-    title: options.title,
-    priority: options.priority,
-    notes: options.notes,
-    now: options.now,
-    id: createNextTodoId(options.existingTodos),
-  };
-}
-
-function createNextTodoId(existingTodos: ReadonlyArray<LaneTodo>): string {
-  let highestValue = 0;
-  for (const todo of existingTodos) {
-    const numericPart = Number.parseInt(todo.id.replace("todo-", ""), 10);
-    if (Number.isNaN(numericPart)) {
-      continue;
-    }
-    highestValue = Math.max(highestValue, numericPart);
-  }
-  return `todo-${String(highestValue + 1).padStart(3, "0")}`;
-}
-
-function parseTodoPriority(input: string): TodoPriority {
-  if (!todoPriorities.has(input as TodoPriority)) {
-    throw new Error(`invalid priority: ${input}`);
-  }
-  return input as TodoPriority;
-}
-
-function parseTodoStatus(input: string): TodoStatus {
-  if (!todoStatuses.has(input as TodoStatus)) {
-    throw new Error(`invalid status: ${input}`);
-  }
-  return input as TodoStatus;
 }
 
 function parseRuntimeMode(input: string): LaneRuntimeMode {

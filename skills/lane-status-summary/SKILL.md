@@ -21,12 +21,11 @@ Use this order:
 
 - Keep it brief.
 - Prefer concrete nouns and verbs.
-- Mention TODO ids when relevant.
 - Do not restate unchanged background unless needed.
 - If nothing needs input, say so plainly.
 
 ## Good example
 
-- Changed: traced paragraph grouping on 3 tagged samples; `todo-004` looks safe to continue.
+- Changed: traced paragraph grouping on 3 tagged samples and confirmed the failing boundary case.
 - Next: validate nested span handling on 2 malformed samples.
 - Needs input: choose strict tag fidelity vs visual fallback for sample B.

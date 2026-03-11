@@ -27,7 +27,7 @@ export function formatInitialLaneContext(lane: Lane): string {
     "- Useful commands/docs:",
     "",
     "Next:",
-    "- No TODOs yet.",
+    "- Capture the next concrete step or decision.",
     "",
   ].join("\n");
 }

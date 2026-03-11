@@ -1,25 +1,18 @@
 import {render} from "preact";
 import {useEffect, useRef, useState} from "preact/hooks";
 import {
-  approveTodo,
-  createTodo,
-  deleteTodo,
   fetchLaneLiveOutput,
   fetchSnapshot,
-  rejectTodo,
   saveLaneContext,
   sendLaneMessage,
-  setTodoStatus,
-  updateTodo,
 } from "./api";
 import {ChatTab} from "./components/ChatTab";
 import {EventsTab} from "./components/EventsTab";
 import {LaneHeader} from "./components/LaneHeader";
 import {LaneTabs} from "./components/LaneTabs";
 import {SettingsTab} from "./components/SettingsTab";
-import {TodoBoard} from "./components/TodoBoard";
 import type {LaneLiveOutput, LaneSnapshot} from "./types";
-import {createConversationKey, createTodoDraftMap, groupTodosByStatus, isScrolledNearBottom, mergeTodoDraftMap, shortRepo, type LaneUiState, type TodoDraft} from "./ui";
+import {createConversationKey, isScrolledNearBottom, shortRepo, type LaneUiState} from "./ui";
 import "./styles.css";
 
 const SELECTED_LANE_STORAGE_KEY = "pi-lanes.selected-lane-id";
@@ -38,8 +31,6 @@ function App() {
     messageMode: "steer",
     contextText: "",
   });
-  const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoDraft>>({});
-  const [newTodo, setNewTodo] = useState({title: "", priority: "medium", notes: ""});
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const shouldStickConversationToBottomRef = useRef(true);
   const previousConversationKeyRef = useRef<string | null>(null);
@@ -55,18 +46,11 @@ function App() {
   useEffect(() => {
     if (!selectedLane) return;
     setUiState(state => ({...state, contextText: state.contextText || selectedLane.contextText}));
-    setTodoDrafts(createTodoDraftMap(selectedLane.todos));
-    setNewTodo({title: "", priority: "medium", notes: ""});
     setLiveOutput(null);
     setRecentCompletedLiveOutput(null);
     shouldStickConversationToBottomRef.current = true;
     previousConversationKeyRef.current = null;
   }, [selectedLane?.lane.id]);
-
-  useEffect(() => {
-    if (!selectedLane) return;
-    setTodoDrafts(previous => mergeTodoDraftMap(previous, selectedLane.todos));
-  }, [selectedLane?.todos]);
 
   useEffect(() => {
     const element = conversationRef.current;
@@ -187,47 +171,6 @@ function App() {
     shouldStickConversationToBottomRef.current = isScrolledNearBottom(element);
   }
 
-  async function handleCreateTodo(): Promise<void> {
-    if (!selectedLane || newTodo.title.trim().length === 0) return;
-    const response = await createTodo(selectedLane.lane.id, newTodo);
-    applyLaneUpdate(response.lane);
-    setNewTodo({title: "", priority: "medium", notes: ""});
-  }
-
-  async function handleSaveTodo(todoId: string): Promise<void> {
-    if (!selectedLane) return;
-    const draft = todoDrafts[todoId];
-    if (!draft) return;
-    const response = await updateTodo(selectedLane.lane.id, todoId, draft);
-    applyLaneUpdate(response.lane);
-  }
-
-  async function handleStatusChange(todoId: string, status: string): Promise<void> {
-    if (!selectedLane) return;
-    const response = await setTodoStatus(selectedLane.lane.id, todoId, status);
-    applyLaneUpdate(response.lane);
-  }
-
-  async function handleApproveTodo(todoId: string): Promise<void> {
-    if (!selectedLane) return;
-    const response = await approveTodo(selectedLane.lane.id, todoId);
-    applyLaneUpdate(response.lane);
-  }
-
-  async function handleRejectTodo(todoId: string): Promise<void> {
-    if (!selectedLane) return;
-    const response = await rejectTodo(selectedLane.lane.id, todoId);
-    applyLaneUpdate(response.lane);
-  }
-
-  async function handleDeleteTodo(todoId: string): Promise<void> {
-    if (!selectedLane) return;
-    const response = await deleteTodo(selectedLane.lane.id, todoId);
-    applyLaneUpdate(response.lane);
-  }
-
-  const todoGroups = selectedLane ? groupTodosByStatus(selectedLane.todos) : null;
-
   function applyLaneUpdate(updatedLane: LaneSnapshot): void {
     setSelectedLane(currentSelectedLane => currentSelectedLane?.lane.id === updatedLane.lane.id ? updatedLane : currentSelectedLane);
     setLanes(currentLanes => currentLanes.map(lane => lane.lane.id === updatedLane.lane.id ? updatedLane : lane));
@@ -247,8 +190,7 @@ function App() {
               <div class="muted">{lane.lane.title}</div>
               <div class="lane-pills">
                 <span class="pill">repo {shortRepo(lane.lane.repoPath)}</span>
-                <span class="pill">open {lane.todoCounts.open}</span>
-                <span class="pill">proposed {lane.todoCounts.proposed}</span>
+                <span class="pill">mode {lane.runtimeState.mode}</span>
                 {lane.liveSessionHealth.ok ? <span class={`pill ${lane.liveSessionHealth.isIdle ? "ok" : "busy"}`}>{lane.liveSessionHealth.isIdle ? "idle" : "busy"}</span> : null}
               </div>
             </button>
@@ -275,23 +217,6 @@ function App() {
                     onMessageTextChange={messageText => setUiState(state => ({...state, messageText}))}
                     onMessageModeChange={messageMode => setUiState(state => ({...state, messageMode}))}
                     onSendMessage={() => void handleSendMessage()}
-                  />
-                ) : null}
-
-                {uiState.activeTab === "todos" && todoGroups ? (
-                  <TodoBoard
-                    lane={selectedLane}
-                    todoGroups={todoGroups}
-                    todoDrafts={todoDrafts}
-                    newTodo={newTodo}
-                    onNewTodoChange={setNewTodo}
-                    onDraftChange={(todoId, draft) => setTodoDrafts(current => ({...current, [todoId]: draft}))}
-                    onCreateTodo={() => void handleCreateTodo()}
-                    onSaveTodo={todoId => void handleSaveTodo(todoId)}
-                    onSetStatus={(todoId, status) => void handleStatusChange(todoId, status)}
-                    onApprove={todoId => void handleApproveTodo(todoId)}
-                    onReject={todoId => void handleRejectTodo(todoId)}
-                    onDelete={todoId => void handleDeleteTodo(todoId)}
                   />
                 ) : null}
 

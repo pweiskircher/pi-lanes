@@ -17,30 +17,6 @@ export type Lane = {
 
 export type LaneRegistry = ReadonlyArray<Lane>;
 
-export type TodoStatus = "proposed" | "open" | "in_progress" | "blocked" | "done" | "dropped";
-
-export type TodoPriority = "low" | "medium" | "high";
-
-export type TodoCreatedBy = "human" | "llm";
-
-export type LaneTodo = {
-  readonly id: string;
-  readonly title: string;
-  readonly notes: string | null;
-  readonly status: TodoStatus;
-  readonly priority: TodoPriority;
-  readonly createdBy: TodoCreatedBy;
-  readonly needsReview: boolean;
-  readonly proposalReason: string | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-};
-
-export type LaneTodoFile = {
-  readonly laneId: string;
-  readonly todos: ReadonlyArray<LaneTodo>;
-};
-
 export type LaneRuntimeMode = "idle" | "interactive" | "working" | "waiting_for_input" | "blocked" | "stopped";
 
 export type LaneRuntimeMessageBridge = {
@@ -56,7 +32,6 @@ export type LaneEventKind =
   | "turn_end"
   | "input"
   | "dashboard_message"
-  | "todo_proposed"
   | "status";
 
 export type LaneEvent = {
@@ -80,7 +55,6 @@ export type LaneRuntimeState = {
   readonly sessionId: string | null;
   readonly repoPath: string;
   readonly mode: LaneRuntimeMode;
-  readonly currentTodoId: string | null;
   readonly messageBridge: LaneRuntimeMessageBridge | null;
 };
 
@@ -98,11 +72,3 @@ export type ValidationResult<T> =
       readonly success: false;
       readonly issues: ReadonlyArray<ValidationIssue>;
     };
-
-export type CreateHumanTodoOptions = {
-  readonly title: string;
-  readonly priority: TodoPriority;
-  readonly notes: string | null;
-  readonly now: string;
-  readonly id: string;
-};
